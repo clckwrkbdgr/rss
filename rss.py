@@ -135,17 +135,17 @@ def parse_feed(url):
 			title = title.strip() or title
 			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
 	except socket.error as e:
-		print(isonow(), url, e)
+		print(isonow(), url, 'socket:', e)
 	except http.client.IncompleteRead as e:
-		print(isonow(), url, e)
+		print(isonow(), url, 'incomplete read:', e)
 	except http.client.BadStatusLine as e:
-		print(isonow(), url, e)
+		print(isonow(), url, 'bad status line:', e)
 	except urllib.error.URLError as e:
-		print(isonow(), url, e)
+		print(isonow(), url, 'url:', e)
 	except xml.etree.ElementTree.ParseError as e:
-		print(isonow(), url, e)
+		print(isonow(), url, 'parse:', e)
 	except xml.parsers.expat.ExpatError as e:
-		print(isonow(), url, e)
+		print(isonow(), url, 'expat:', e)
 
 def make_text(title, date, link, content):
 	return HTML_TEMPLATE.format(title, link, date, content)
@@ -156,7 +156,7 @@ def extract_tags_from_text(text):
 		tags = soup.find_all('a', class_='tag')
 		return [tag.text for tag in tags]
 	except TypeError as e:
-		print(isonow(), e)
+		print(isonow(), 'type:', e)
 	return []
 
 def make_filename(path, title, text):
@@ -202,9 +202,6 @@ def main():
 	RSS_INI_FILE = os.path.join(home, RSS_INI_FILE)
 	RSS_DIR = os.path.join(home, RSS_DIR)
 	GUID_FILE = os.path.join(home, GUID_FILE)
-
-	print(make_text('title', 'date', 'link', 'content'))
-	return
 
 	rsslinks = load_ini(RSS_INI_FILE )
 	available_groups = rsslinks.keys()
