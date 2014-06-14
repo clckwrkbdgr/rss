@@ -134,6 +134,8 @@ def parse_feed(url):
 			title = get_title(item)
 			title = title.strip() or title
 			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
+	except UnicodeEncodeError as e:
+		print(isonow(), url, 'unicode:', e)
 	except socket.error as e:
 		print(isonow(), url, 'socket:', e)
 	except http.client.IncompleteRead as e:
