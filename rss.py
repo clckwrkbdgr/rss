@@ -120,7 +120,7 @@ def get_content(item):
 # Yields: guid, title, date, link, content
 def parse_feed(url):
 	try:
-		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0' })
+		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
 		handle = urllib.request.urlopen(req)
 		#handle = urllib.request.urlopen(url)
 		text = handle.read()
