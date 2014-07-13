@@ -3,6 +3,7 @@ ROOT_DIR=~/rss
 GOOD_DIR="$ROOT_DIR/other"
 BAD_DIR="$ROOT_DIR/unwanted"
 
+ATO_DIR="$ROOT_DIR/ato"
 COFFEE_DIR="$ROOT_DIR/coffee"
 COMIC_DIR="$ROOT_DIR/comic"
 TOREAD_DIR="$ROOT_DIR/news"
@@ -36,10 +37,12 @@ COMIC_FILTER='explosm\|developerslife\|dilbert\|defun[.]co\|devopsreactions\|api
 COFFEE_FILTER='fmylife\|bash[.]im\|zadolba[.]li\|perashki\|killmepls\|ibash\|korrespondent\|ithappens'
 TOREAD_FILTER='habrahabr\|thedailywtf\|xkcd[.]com\|ct_news\|elementy\|ttolk\|smartfiction\|useless-faq\|metallibrary\|instead[.]syscall\|gutta-honey\|tumbalele\|venena-letalis\|linux[.]org[.]ru\|factroom\|dou[.]ua\|lurkmore\|roguetemple\|dzone\|toster[.]ru'
 COMPULENTA_FILTER='compulenta'
+ATO_FILTER='korrespondent'
 if [ -d "$GOOD_DIR" ]; then
 	pushd "$GOOD_DIR" >/dev/null
 	for f in *; do
 		[ -d "$f" ] && continue
+		cat -- "$f" | grep -q "$ATO_FILTER" && mkdir -p "$ATO_DIR" && mv -v -- "$f" "$ATO_DIR" && continue
 		cat -- "$f" | grep -q "$COMIC_FILTER" && mkdir -p "$COMIC_DIR" && mv -v -- "$f" "$COMIC_DIR" && continue
 		cat -- "$f" | grep -q "$COFFEE_FILTER" && mkdir -p "$COFFEE_DIR" && mv -v -- "$f" "$COFFEE_DIR" && continue
 		cat -- "$f" | grep -q "$TOREAD_FILTER" && mkdir -p "$TOREAD_DIR" && mv -v -- "$f" "$TOREAD_DIR" && continue

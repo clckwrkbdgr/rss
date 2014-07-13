@@ -67,7 +67,7 @@ def get_guid(item):
 		result = item.find(tagname)
 		if result is not None:
 			if result.tag.endswith('link') and 'href' in result.attrib:
-				return result.attrib['href']
+				return result.attrib['href'].tolower()
 			return result.text
 	return ''
 
