@@ -68,6 +68,8 @@ def get_guid(item):
 		if result is not None:
 			if result.tag.endswith('link') and 'href' in result.attrib:
 				return result.attrib['href'].tolower()
+			if result.tag.endswith('guid') and 'isPermalink' in result.attrib:
+				return result.text.tolower()
 			return result.text
 	return ''
 
