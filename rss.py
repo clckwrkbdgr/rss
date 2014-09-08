@@ -67,9 +67,9 @@ def get_guid(item):
 		result = item.find(tagname)
 		if result is not None:
 			if result.tag.endswith('link') and 'href' in result.attrib:
-				return result.attrib['href'].tolower()
+				return result.attrib['href'].lower()
 			if result.tag.endswith('guid') and 'isPermalink' in result.attrib:
-				return result.text.tolower()
+				return result.text.lower()
 			return result.text
 	return ''
 
@@ -127,6 +127,7 @@ def parse_feed(url):
 		#handle = urllib.request.urlopen(url)
 		text = handle.read()
 		text = text.replace(b'\x10', b' ')
+		text = text.replace(b'', b' ')
 		text = text.replace(b'& ', b'&amp; ')
 		root = ET.fromstring(text)
 		if root.tag not in ['rss', '{http://www.w3.org/2005/Atom}feed']:
