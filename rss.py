@@ -12,6 +12,7 @@ import urllib.request
 import re
 import datetime
 import http
+import random
 RSS_INI_FILE = 'rss.ini'
 RSS_DIR = 'rss'
 GUID_FILE = ".guids.sqlite"
@@ -34,6 +35,25 @@ HTML_TEMPLATE = """<html>
 <div>{3}</div>
 </body>
 </html>"""
+HOSTS = [
+		"8.8.8.8", # Google DNS
+		"8.8.4.4", # Google DNS
+		"139.130.4.5", # Australian primary NS
+		"208.67.222.222", # OpenDNS
+		"208.67.220.220" # OpenDNS
+		]
+
+def knock(host):
+	return os.system("ping -c 1 -s 1 -W 2 {0} >/dev/null 2>&1".format(host)) == 0
+
+def check_network():
+	host = random.choice(HOSTS)
+	if knock(host):
+		return True
+	for host in HOSTS:
+		if knock(host):
+			return True
+	return False
 
 def isonow():
 	return datetime.datetime.now().isoformat(' ')
@@ -207,6 +227,9 @@ def main():
 	RSS_INI_FILE = os.path.join(home, RSS_INI_FILE)
 	RSS_DIR = os.path.join(home, RSS_DIR)
 	GUID_FILE = os.path.join(home, GUID_FILE)
+
+	if not check_network():
+		print(isonow() + ": Network is down")
 
 	rsslinks = load_ini(RSS_INI_FILE )
 	available_groups = rsslinks.keys()
