@@ -230,6 +230,7 @@ def main():
 
 	if not check_network():
 		print(isonow() + ": Network is down")
+		return
 
 	rsslinks = load_ini(RSS_INI_FILE )
 	available_groups = rsslinks.keys()
