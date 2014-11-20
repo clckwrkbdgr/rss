@@ -13,6 +13,7 @@ import re
 import datetime
 import http
 import random
+import wwts
 RSS_INI_FILE = 'rss.ini'
 RSS_DIR = 'rss'
 GUID_FILE = ".guids.sqlite"
@@ -197,16 +198,28 @@ def make_filename(path, title, text):
 		filename += '_'
 	return os.path.join(path, filename + '.html')
 
-def pull_feed(group, url, db):
+def pull_feed(group, url, db, bayes):
 	for guid, title, date, link, content in parse_feed(url):
 		exists = db.guid_exists(url, guid)
 		if exists:
 			continue
+
+		savedir = RSS_DIR
+		bayes_result = dict(bayes.guess(content if content else "" + title))
+		if 'good' not in bayes_result:
+			bayes_result['good'] = 0
+		if 'bad' not in bayes_result:
+			bayes_result['bad'] = 0
+		if bayes_result['bad'] > bayes_result['good']:
+			savedir = os.path.join(savedir, 'unwanted')
+		else:
+			savedir = os.path.join(savedir, group)
+
 		text = make_text(title, date, link, content)
 		if 'twitter.com' in url or 'twitter-rss.com' in url:
 			parts = url.split('/');
 			title = url[-1] + '_' + title
-		filename = make_filename(RSS_DIR, title, content)
+		filename = make_filename(savedir, title, content)
 		#filename = make_filename(os.path.join(RSS_DIR, group), title, content)
 		"""
 		if not guid: print(isonow(), url, "guid", guid)
@@ -219,6 +232,7 @@ def pull_feed(group, url, db):
 			f.write(text)
 		db.add_guid(url, guid)
 
+BayesData = wwts.BayesData
 def main():
 	global RSS_INI_FILE
 	global RSS_DIR
@@ -245,10 +259,14 @@ def main():
 	if has_incorrect_groups:
 		print("Available groups: {0}".format(', '.join(["'{0}'".format(group) for group in available_groups])))
 		return
+
 	db = guids.GuidDatabase(GUID_FILE)
+	bayes = wwts.Bayes(tokenizer=wwts.Tokenizer(lower=True))
+	bayes.load()
+
 	for group in groups:
 		for url in rsslinks[group]:
-			pull_feed(group, url, db)
+			pull_feed(group, url, db, bayes)
 	db.close()
 
 if __name__ == "__main__":
