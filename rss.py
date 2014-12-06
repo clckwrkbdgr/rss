@@ -205,7 +205,10 @@ def pull_feed(group, url, db, bayes):
 			continue
 
 		savedir = RSS_DIR
-		bayes_result = dict(bayes.guess(content if content else "" + title))
+		text_to_guess = content if content is not None else ""
+		text_to_guess += title if title is not None else ""
+		text_to_guess += link if link is not None else ""
+		bayes_result = dict(bayes.guess(text_to_guess if text_to_guess else url))
 		if 'good' not in bayes_result:
 			bayes_result['good'] = 0
 		if 'bad' not in bayes_result:
