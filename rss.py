@@ -141,7 +141,7 @@ def get_content(item):
 	return ''
 
 # Yields: guid, title, date, link, content
-def parse_feed(url):
+def parse_feed(url, attempts_left=3):
 	try:
 		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
 		handle = urllib.request.urlopen(req)
@@ -163,12 +163,18 @@ def parse_feed(url):
 	except socket.error as e:
 		print(isonow(), url, 'socket:', e)
 	except http.client.IncompleteRead as e:
+		if attempts_left > 0:
+			parse_feed(url, attempts_left - 1)
+			return
 		print(isonow(), url, 'incomplete read:', e)
 	except http.client.BadStatusLine as e:
 		print(isonow(), url, 'bad status line:', e)
 	except urllib.error.URLError as e:
 		print(isonow(), url, 'url:', e)
 	except xml.etree.ElementTree.ParseError as e:
+		if attempts_left > 0:
+			parse_feed(url, attempts_left - 1)
+			return
 		print(isonow(), url, 'parse:', e)
 	except xml.parsers.expat.ExpatError as e:
 		print(isonow(), url, 'expat:', e)
