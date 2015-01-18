@@ -137,7 +137,10 @@ def get_content(item):
 	for tagname in fulltags:
 		result = item.find(tagname)
 		if result is not None:
-			return result.text
+			if result.text is None:
+				return ET.tostring(result, encoding='utf-8').decode('utf-8')
+			else:
+				return result.text
 	return ''
 
 # Yields: guid, title, date, link, content
