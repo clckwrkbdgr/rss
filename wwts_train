@@ -1,5 +1,5 @@
 #!/bin/bash
-ROOT_DIR=~/rss
+ROOT_DIR=~/RSS
 
 TAG="$1"
 [ -z "$TAG" ] && echo "Tag must be specified!" && exit

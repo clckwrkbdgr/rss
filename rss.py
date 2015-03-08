@@ -15,7 +15,7 @@ import http
 import random
 import wwts
 RSS_INI_FILE = 'rss.ini'
-RSS_DIR = 'rss'
+RSS_DIR = 'RSS'
 GUID_FILE = ".guids.sqlite"
 UNPRINTABLE = r'/?'
 MAX_FILE_NAME_LENGTH = 70
