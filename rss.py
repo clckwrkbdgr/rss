@@ -168,7 +168,6 @@ def parse_feed(url, attempts_left=3):
 	except http.client.IncompleteRead as e:
 		if attempts_left > 0:
 			parse_feed(url, attempts_left - 1)
-			return
 		print(isonow(), url, 'incomplete read:', e)
 	except http.client.BadStatusLine as e:
 		print(isonow(), url, 'bad status line:', e)
@@ -177,7 +176,6 @@ def parse_feed(url, attempts_left=3):
 	except xml.etree.ElementTree.ParseError as e:
 		if attempts_left > 0:
 			parse_feed(url, attempts_left - 1)
-			return
 		print(isonow(), url, 'parse:', e)
 	except xml.parsers.expat.ExpatError as e:
 		print(isonow(), url, 'expat:', e)
