@@ -143,16 +143,25 @@ def get_content(item):
 				return result.text
 	return ''
 
+DOCTYPE = b'''
+<!DOCTYPE naughtyxml [
+	<!ENTITY nbsp "&#0160;">
+	<!ENTITY copy "&#0169;">
+]>
+'''
 # Yields: guid, title, date, link, content
 def parse_feed(url, attempts_left=3):
 	try:
 		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
 		handle = urllib.request.urlopen(req)
-		#handle = urllib.request.urlopen(url)
 		text = handle.read()
 		text = text.replace(b'\x10', b' ')
 		text = text.replace(b'', b' ')
+		text = text.replace(b'\x0d', b' ')
 		text = text.replace(b'& ', b'&amp; ')
+		if attempts_left < 3:
+			xml_decl_end = text.find(b'>') + 1
+			text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
 		root = ET.fromstring(text)
 		if root.tag not in ['rss', '{http://www.w3.org/2005/Atom}feed']:
 			print('{0} at {1} instead of <rss> or <feed>'.format(root.tag, url))
@@ -176,7 +185,8 @@ def parse_feed(url, attempts_left=3):
 	except xml.etree.ElementTree.ParseError as e:
 		if attempts_left > 0:
 			parse_feed(url, attempts_left - 1)
-		print(isonow(), url, 'parse:', e)
+		else:
+			print(isonow(), url, 'parse:', e)
 	except xml.parsers.expat.ExpatError as e:
 		print(isonow(), url, 'expat:', e)
 
@@ -272,7 +282,10 @@ def main():
 
 	db = guids.GuidDatabase(GUID_FILE)
 	bayes = wwts.Bayes(tokenizer=wwts.Tokenizer(lower=True))
-	bayes.load()
+	try:
+		bayes.load()
+	except Exception as e:
+		print(isonow(), 'bayes:', e)
 
 	for group in groups:
 		for url in rsslinks[group]:
