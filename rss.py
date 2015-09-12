@@ -195,7 +195,7 @@ def make_text(title, date, link, content):
 
 def extract_tags_from_text(text):
 	try:
-		soup = bs4.BeautifulSoup(text)
+		soup = bs4.BeautifulSoup(text, "html5lib")
 		tags = soup.find_all('a', class_='tag')
 		return [tag.text for tag in tags]
 	except TypeError as e:
