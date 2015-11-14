@@ -176,15 +176,16 @@ def parse_feed(url, attempts_left=3):
 		print(isonow(), url, 'socket:', e)
 	except http.client.IncompleteRead as e:
 		if attempts_left > 0:
-			parse_feed(url, attempts_left - 1)
-		print(isonow(), url, 'incomplete read:', e)
+			yield from parse_feed(url, attempts_left - 1)
+		else:
+			print(isonow(), url, 'incomplete read:', e)
 	except http.client.BadStatusLine as e:
 		print(isonow(), url, 'bad status line:', e)
 	except urllib.error.URLError as e:
 		print(isonow(), url, 'url:', e)
 	except xml.etree.ElementTree.ParseError as e:
 		if attempts_left > 0:
-			parse_feed(url, attempts_left - 1)
+			yield from parse_feed(url, attempts_left - 1)
 		else:
 			print(isonow(), url, 'parse:', e)
 	except xml.parsers.expat.ExpatError as e:
