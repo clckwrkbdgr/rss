@@ -279,7 +279,8 @@ def main():
 			has_incorrect_groups = True
 	if has_incorrect_groups:
 		print("Available groups: {0}".format(', '.join(["'{0}'".format(group) for group in available_groups])))
-		return
+		groups = [group for group in groups if group in available_groups]
+		print("Will load following groups: {0}".format(' '.join(groups)))
 
 	db = guids.GuidDatabase(GUID_FILE)
 	bayes = wwts.Bayes(tokenizer=wwts.Tokenizer(lower=True))
