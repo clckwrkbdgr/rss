@@ -159,6 +159,9 @@ def parse_feed(url, attempts_left=3):
 		text = text.replace(b'', b' ')
 		text = text.replace(b'\x0d', b' ')
 		text = text.replace(b'& ', b'&amp; ')
+		rss_end_tag = text.find(b'</rss>')
+		if rss_end_tag > -1:
+			text = text[:rss_end_tag+len(b'</rss>')]
 		if attempts_left < 3:
 			xml_decl_end = text.find(b'>') + 1
 			text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
