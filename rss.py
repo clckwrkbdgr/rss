@@ -190,7 +190,13 @@ def parse_feed(url, attempts_left=3):
 		if attempts_left > 0:
 			yield from parse_feed(url, attempts_left - 1)
 		else:
-			print(isonow(), url, 'parse:', e)
+			incomplete_read_patterns = [
+					"no element found: line 6, column 0",
+					"unclosed CDATA section:",
+					"unclosed token:",
+					]
+			if not any(pattern in str(e) for pattern in incomplete_read_patterns):
+				print(isonow(), url, 'parse:', e)
 	except xml.parsers.expat.ExpatError as e:
 		print(isonow(), url, 'expat:', e)
 
