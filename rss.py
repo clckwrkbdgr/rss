@@ -192,8 +192,9 @@ def parse_feed(url, attempts_left=3):
 		else:
 			incomplete_read_patterns = [
 					"no element found: line 6, column 0",
-					"unclosed CDATA section:",
-					"unclosed token:",
+					"no element found: line 7",
+					"unclosed CDATA section: line 7",
+					"unclosed token: line 7",
 					]
 			if not any(pattern in str(e) for pattern in incomplete_read_patterns):
 				print(isonow(), url, 'parse:', e)
