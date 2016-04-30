@@ -162,7 +162,9 @@ def parse_feed(url, attempts_left=3):
 		rss_end_tag = text.find(b'</rss>')
 		if rss_end_tag > -1:
 			text = text[:rss_end_tag+len(b'</rss>')]
-		if attempts_left < 3:
+		if attempts_left == 2:
+			text = text.replace(b'\x92', b"'")
+		if attempts_left < 2:
 			xml_decl_end = text.find(b'>') + 1
 			text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
 		root = ET.fromstring(text)
