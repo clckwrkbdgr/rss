@@ -14,9 +14,28 @@ import datetime
 import http
 import random
 import wwts
-RSS_INI_FILE = 'rss.ini'
-RSS_DIR = 'RSS'
-GUID_FILE = ".guids.sqlite"
+
+def log(*args):
+	data_dir = os.environ.get('XDG_DATA_HOME')
+	if not data_dir:
+		data_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
+	logdir = os.path.join(data_dir, "rss")
+	os.makedirs(logdir, exist_ok=True)
+	with open(os.path.join(logdir, "rss.log"), "a") as logfile:
+		isonow = datetime.datetime.now().isoformat(' ')
+		logfile.write("{0}:{1}\n".format(isonow, ' '.join([str(arg) for arg in args])))
+
+def get_data_dir():
+	config_dir = os.environ.get('XDG_DATA_HOME')
+	if not config_dir:
+		config_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
+	rss_data_dir = os.path.join(config_dir, "rss")
+	os.makedirs(rss_data_dir, exist_ok=True)
+	return rss_data_dir
+
+RSS_INI_FILE = os.path.join(get_data_dir(), 'rss.ini')
+RSS_DIR = os.path.join(os.path.expanduser("~"), 'RSS')
+GUID_FILE = os.path.join(get_data_dir(), "guids.sqlite")
 UNPRINTABLE = r'/?'
 MAX_FILE_NAME_LENGTH = 70
 HTML_TEMPLATE = """<html>
@@ -169,25 +188,25 @@ def parse_feed(url, attempts_left=3):
 			text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
 		root = ET.fromstring(text)
 		if root.tag not in ['rss', '{http://www.w3.org/2005/Atom}feed']:
-			print('{0} at {1} instead of <rss> or <feed>'.format(root.tag, url))
+			log('{0} at {1} instead of <rss> or <feed>'.format(root.tag, url))
 			return
 		for item in fetch_items(root):
 			title = get_title(item)
 			title = title.strip() or title
 			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
 	except UnicodeEncodeError as e:
-		print(isonow(), url, 'unicode:', e)
+		log(url, 'unicode:', e)
 	except socket.error as e:
-		print(isonow(), url, 'socket:', e)
+		log(url, 'socket:', e)
 	except http.client.IncompleteRead as e:
 		if attempts_left > 0:
 			yield from parse_feed(url, attempts_left - 1)
 		else:
-			print(isonow(), url, 'incomplete read:', e)
+			log(url, 'incomplete read:', e)
 	except http.client.BadStatusLine as e:
-		print(isonow(), url, 'bad status line:', e)
+		log(url, 'bad status line:', e)
 	except urllib.error.URLError as e:
-		print(isonow(), url, 'url:', e)
+		log(url, 'url:', e)
 	except xml.etree.ElementTree.ParseError as e:
 		if attempts_left > 0:
 			yield from parse_feed(url, attempts_left - 1)
@@ -199,9 +218,9 @@ def parse_feed(url, attempts_left=3):
 					"unclosed token: line 7",
 					]
 			if not any(pattern in str(e) for pattern in incomplete_read_patterns):
-				print(isonow(), url, 'parse:', e)
+				log(url, 'parse:', e)
 	except xml.parsers.expat.ExpatError as e:
-		print(isonow(), url, 'expat:', e)
+		log(url, 'expat:', e)
 
 def make_text(title, date, link, content):
 	return HTML_TEMPLATE.format(title, link, date, content)
@@ -212,7 +231,7 @@ def extract_tags_from_text(text):
 		tags = soup.find_all('a', class_='tag')
 		return [tag.text for tag in tags]
 	except TypeError as e:
-		print(isonow(), 'type:', e)
+		log('type:', e)
 	return []
 
 def make_filename(path, title, text):
@@ -253,14 +272,6 @@ def pull_feed(group, url, db, bayes):
 			parts = url.split('/');
 			title = url[-1] + '_' + title
 		filename = make_filename(savedir, title, content)
-		#filename = make_filename(os.path.join(RSS_DIR, group), title, content)
-		"""
-		if not guid: print(isonow(), url, "guid", guid)
-		if not title: print(isonow(), url, "title", title)
-		if not date: print(isonow(), url, "date", date)
-		if not link: print(isonow(), url, "link", link)
-		if not content: print(isonow(), url, "content", content)
-		"""
 		with open(filename, 'w') as f:
 			f.write(text)
 		db.add_guid(url, guid)
@@ -270,13 +281,9 @@ def main():
 	global RSS_INI_FILE
 	global RSS_DIR
 	global GUID_FILE
-	home = os.path.expanduser("~")
-	RSS_INI_FILE = os.path.join(home, RSS_INI_FILE)
-	RSS_DIR = os.path.join(home, RSS_DIR)
-	GUID_FILE = os.path.join(home, GUID_FILE)
 
 	if not check_network():
-		print(isonow() + ": Network is down")
+		log("Network is down")
 		return
 
 	rsslinks = load_ini(RSS_INI_FILE )
@@ -287,19 +294,19 @@ def main():
 	has_incorrect_groups = False
 	for group in groups:
 		if group not in available_groups:
-			print("Group '{0}' is not available in links!".format(group))
+			log("Group '{0}' is not available in links!".format(group))
 			has_incorrect_groups = True
 	if has_incorrect_groups:
-		print("Available groups: {0}".format(', '.join(["'{0}'".format(group) for group in available_groups])))
+		log("Available groups: {0}".format(', '.join(["'{0}'".format(group) for group in available_groups])))
 		groups = [group for group in groups if group in available_groups]
-		print("Will load following groups: {0}".format(' '.join(groups)))
+		log("Will load following groups: {0}".format(' '.join(groups)))
 
 	db = guids.GuidDatabase(GUID_FILE)
 	bayes = wwts.Bayes(tokenizer=wwts.Tokenizer(lower=True))
 	try:
 		bayes.load()
 	except Exception as e:
-		print(isonow(), 'bayes:', e)
+		log('bayes:', e)
 
 	for group in groups:
 		for url in rsslinks[group]:

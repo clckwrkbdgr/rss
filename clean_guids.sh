@@ -2,8 +2,9 @@
 
 ENTRIES_TO_KEEP=150
 SQLFILE=$(mktemp)
+GUIDS_FILE="${XDG_DATA_DIR:-~/.local/share}/rss/guids.sqlite"
 
-echo 'select feed from Guids group by feed having count(*) > 100;' | sqlite3 ~/.guids.sqlite | while read FEED; do
+echo 'select feed from Guids group by feed having count(*) > 100;' | sqlite3 "$GUIDS_FILE" | while read FEED; do
 	echo ' delete from Guids '               >>"$SQLFILE"
 	echo " where feed = \"$FEED\" "          >>"$SQLFILE"
 	echo " and datetime < ( "                >>"$SQLFILE"
@@ -15,4 +16,4 @@ echo 'select feed from Guids group by feed having count(*) > 100;' | sqlite3 ~/.
 done
 echo " vacuum; "                         >>"$SQLFILE"
 
-cat "$SQLFILE" | sqlite3 ~/.guids.sqlite
+cat "$SQLFILE" | sqlite3 "$GUIDS_FILE"

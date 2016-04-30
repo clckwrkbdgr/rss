@@ -31,7 +31,15 @@ try:
 except ImportError:
 	Set = set
 
-DATA_DIRECTORY = os.path.join(os.path.expanduser("~"), 'bin', 'data')
+def get_data_dir():
+	config_dir = os.environ.get('XDG_DATA_HOME')
+	if not config_dir:
+		config_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
+	rss_data_dir = os.path.join(config_dir, "rss")
+	os.makedirs(rss_data_dir, exist_ok=True)
+	return rss_data_dir
+
+DATA_DIRECTORY = get_data_dir()
 
 class BayesData(dict):
 
