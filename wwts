@@ -1,2 +1,2 @@
 #!/bin/bash
-python3 ~/bin/wwts.py "$@"
+python3 ~/.projects/bin/wwts.py "$@"
