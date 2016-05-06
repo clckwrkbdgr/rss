@@ -254,17 +254,21 @@ def pull_feed(group, url, db, bayes):
 			continue
 
 		savedir = RSS_DIR
-		text_to_guess = content if content is not None else ""
-		text_to_guess += title if title is not None else ""
-		text_to_guess += link if link is not None else ""
-		bayes_result = dict(bayes.guess(text_to_guess if text_to_guess else url))
-		if 'good' not in bayes_result:
-			bayes_result['good'] = 0
-		if 'bad' not in bayes_result:
-			bayes_result['bad'] = 0
-		if bayes_result['bad'] > bayes_result['good']:
-			savedir = os.path.join(savedir, 'unwanted')
+		if bayes is not None:
+			text_to_guess = content if content is not None else ""
+			text_to_guess += title if title is not None else ""
+			text_to_guess += link if link is not None else ""
+			bayes_result = dict(bayes.guess(text_to_guess if text_to_guess else url))
+			if 'good' not in bayes_result:
+				bayes_result['good'] = 0
+			if 'bad' not in bayes_result:
+				bayes_result['bad'] = 0
+			if bayes_result['bad'] > bayes_result['good']:
+				savedir = os.path.join(savedir, 'unwanted')
+			else:
+				savedir = os.path.join(savedir, group)
 		else:
+			# Assume as always good.
 			savedir = os.path.join(savedir, group)
 
 		text = make_text(title, date, link, content)
@@ -310,7 +314,10 @@ def main():
 
 	for group in groups:
 		for url in rsslinks[group]:
-			pull_feed(group, url, db, bayes)
+			if url.startswith('+'):
+				pull_feed(group, url.lstrip('+'), db, None)
+			else:
+				pull_feed(group, url, db, bayes)
 	db.close()
 
 if __name__ == "__main__":
