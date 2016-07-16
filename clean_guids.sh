@@ -2,7 +2,7 @@
 
 ENTRIES_TO_KEEP=150
 SQLFILE=$(mktemp)
-GUIDS_FILE="${XDG_DATA_DIR:-$HOME/.local/share}/rss/guids.sqlite"
+GUIDS_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/rss/guids.sqlite"
 
 echo 'select feed from Guids group by feed having count(*) > 100;' | sqlite3 "$GUIDS_FILE" | while read FEED; do
 	echo ' delete from Guids '               >>"$SQLFILE"

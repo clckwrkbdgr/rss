@@ -16,9 +16,9 @@ import random
 import wwts
 
 def log(*args):
-	data_dir = os.environ.get('XDG_DATA_HOME')
+	data_dir = os.environ.get('XDG_LOG_HOME')
 	if not data_dir:
-		data_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
+		data_dir = os.path.join(os.path.expanduser("~"), ".local", "log")
 	logdir = os.path.join(data_dir, "rss")
 	os.makedirs(logdir, exist_ok=True)
 	with open(os.path.join(logdir, "rss.log"), "a") as logfile:
@@ -26,16 +26,24 @@ def log(*args):
 		logfile.write("{0}:{1}\n".format(isonow, ' '.join([str(arg) for arg in args])))
 
 def get_data_dir():
-	config_dir = os.environ.get('XDG_DATA_HOME')
-	if not config_dir:
-		config_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
-	rss_data_dir = os.path.join(config_dir, "rss")
+	data_dir = os.environ.get('XDG_DATA_HOME')
+	if not data_dir:
+		data_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
+	rss_data_dir = os.path.join(data_dir, "rss")
 	os.makedirs(rss_data_dir, exist_ok=True)
 	return rss_data_dir
 
+def get_cache_dir():
+	cache_dir = os.environ.get('XDG_CACHE_HOME')
+	if not cache_dir:
+		cache_dir = os.path.join(os.path.expanduser("~"), ".cache")
+	rss_cache_dir = os.path.join(cache_dir, "rss")
+	os.makedirs(rss_cache_dir, exist_ok=True)
+	return rss_cache_dir
+
 RSS_INI_FILE = os.path.join(get_data_dir(), 'rss.ini')
 RSS_DIR = os.path.join(os.path.expanduser("~"), 'RSS')
-GUID_FILE = os.path.join(get_data_dir(), "guids.sqlite")
+GUID_FILE = os.path.join(get_cache_dir(), "guids.sqlite")
 UNPRINTABLE = r'/?'
 MAX_FILE_NAME_LENGTH = 70
 HTML_TEMPLATE = """<html>
