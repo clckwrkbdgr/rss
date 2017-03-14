@@ -192,9 +192,14 @@ def parse_feed(url, attempts_left=3):
 			text = text[:rss_end_tag+len(b'</rss>')]
 		if attempts_left == 2:
 			text = text.replace(b'\x92', b"'")
+			text = text.replace(b'\xfc', b'u') # Quickfix for incorrect encoding.
 		if attempts_left < 2:
+			xml_decl_start = text.find(b'<') + 1
 			xml_decl_end = text.find(b'>') + 1
-			text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
+			if text[xml_decl_start:xml_decl_start+4] != '?xml':
+				text = b'<?xml version="1.0" encoding="UTF-8"?>' + DOCTYPE + text
+			else:
+				text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
 		root = ET.fromstring(text)
 		if root.tag not in ['rss', '{http://www.w3.org/2005/Atom}feed']:
 			log('{0} at {1} instead of <rss> or <feed>'.format(root.tag, url))
