@@ -192,6 +192,7 @@ def parse_feed(url, attempts_left=3):
 			text = text[:rss_end_tag+len(b'</rss>')]
 		if attempts_left == 2:
 			text = text.replace(b'\x92', b"'")
+		if attempts_left == 0:
 			text = text.replace(b'\xfc', b'u') # Quickfix for incorrect encoding.
 		if attempts_left < 2:
 			xml_decl_start = text.find(b'<') + 1
