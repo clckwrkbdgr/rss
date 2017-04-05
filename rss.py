@@ -184,6 +184,7 @@ def parse_feed(url, attempts_left=3):
 		text = handle.read()
 		text = text.replace(b'\x10', b' ')
 		text = text.replace(b'', b' ')
+		text = text.replace(b'\x0c', b' ') # ^L
 		text = text.replace(b'\x11', b'-')
 		text = text.replace(b'\x0d', b' ')
 		text = text.replace(b'& ', b'&amp; ')
@@ -193,7 +194,7 @@ def parse_feed(url, attempts_left=3):
 		if attempts_left == 2:
 			text = text.replace(b'\x92', b"'")
 		if attempts_left == 0:
-			text = text.replace(b'\xfc', b'u') # Quickfix for incorrect encoding.
+			pass #text = text.replace(b'\xfc', b'u') # Quickfix for incorrect encoding.
 		if attempts_left < 2:
 			xml_decl_start = text.find(b'<') + 1
 			xml_decl_end = text.find(b'>') + 1
