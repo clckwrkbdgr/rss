@@ -206,7 +206,10 @@ def parse_feed(url, attempts_left=3):
 		if root.tag not in ['rss', '{http://www.w3.org/2005/Atom}feed']:
 			log('{0} at {1} instead of <rss> or <feed>'.format(root.tag, url))
 			return
-		for item in fetch_items(root):
+		# Normally RSS feed contains most recent items on top,
+		# so we reverse the list to match order of items with expected (natural) order of processing,
+		# e.g. so that mtimes of created files were placed in order the items were created.
+		for item in reversed(fetch_items(root)):
 			title = get_title(item)
 			title = title.strip() or title
 			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
