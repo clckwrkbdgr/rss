@@ -13,6 +13,7 @@ import re
 import datetime
 import http
 import random
+import gzip
 import wwts
 
 def log(*args):
@@ -182,6 +183,9 @@ def parse_feed(url, attempts_left=3):
 		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
 		handle = urllib.request.urlopen(req)
 		text = handle.read()
+		if len(text) > 2 and text[0] == 0x1f and text[1] == 0x8b:
+			# We have gzipped content here.
+			text = gzip.decompress(text)
 		text = text.replace(b'\x10', b' ')
 		text = text.replace(b'', b' ')
 		text = text.replace(b'\x0c', b' ') # ^L
