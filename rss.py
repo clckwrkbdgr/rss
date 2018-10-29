@@ -175,6 +175,8 @@ DOCTYPE = b'''
 <!DOCTYPE naughtyxml [
 	<!ENTITY nbsp "&#0160;">
 	<!ENTITY copy "&#0169;">
+	<!ENTITY laquo "&#0171;">
+	<!ENTITY raquo "&#0187;">
 ]>
 '''
 # Yields: guid, title, date, link, content
@@ -202,7 +204,7 @@ def parse_feed(url, attempts_left=3):
 		if attempts_left < 2:
 			xml_decl_start = text.find(b'<') + 1
 			xml_decl_end = text.find(b'>') + 1
-			if text[xml_decl_start:xml_decl_start+4] != '?xml':
+			if text[xml_decl_start:xml_decl_start+4] != b'?xml':
 				text = b'<?xml version="1.0" encoding="UTF-8"?>' + DOCTYPE + text
 			else:
 				text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
