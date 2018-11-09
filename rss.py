@@ -194,6 +194,7 @@ def parse_feed(url, attempts_left=3):
 		text = text.replace(b'\x11', b'-')
 		text = text.replace(b'\x0d', b' ')
 		text = text.replace(b'& ', b'&amp; ')
+		text = re.sub(r'&([^;]{10})'.encode(), r'&amp;\1'.encode(), text)
 		rss_end_tag = text.find(b'</rss>')
 		if rss_end_tag > -1:
 			text = text[:rss_end_tag+len(b'</rss>')]
