@@ -223,7 +223,16 @@ def parse_feed(url, attempts_left=3):
 	except UnicodeEncodeError as e:
 		log(url, 'unicode:', e)
 	except socket.error as e:
-		log(url, 'socket:', e)
+		try:
+			if e.code == 500:
+				if attempts_left > 0:
+					yield from parse_feed(url, attempts_left - 1)
+				else:
+					log(url, 'socket:', e)
+			else:
+				log(url, 'socket:', e)
+		except:
+			log(url, 'socket:', e)
 	except http.client.IncompleteRead as e:
 		if attempts_left > 0:
 			yield from parse_feed(url, attempts_left - 1)
