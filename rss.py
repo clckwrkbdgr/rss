@@ -284,8 +284,11 @@ def make_filename(path, title, text):
 
 def pull_feed(group, url, db, bayes):
 	for guid, title, date, link, content in parse_feed(url):
-		exists = db.guid_exists(url, guid)
-		if exists:
+		if db.guid_exists(url, guid):
+			continue
+		if guid.startswith('http://') and db.guid_exists(url, guid.replace('http://', 'https://')):
+			continue
+		if guid.startswith('https://') and db.guid_exists(url, guid.replace('https://', 'http://')):
 			continue
 
 		savedir = RSS_DIR
