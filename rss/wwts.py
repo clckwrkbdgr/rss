@@ -363,14 +363,14 @@ def chi2P(chi, df):
 
 ## BAYES END
 
-def main():
+def run_wwts(args=None):
     parser = argparse.ArgumentParser(description='Who wrote this shit?')
     parser.add_argument('file', nargs='+', help='Input file')
     parser.add_argument('-T', '--tag', help='Tag, e.g. \'Thaddeus T. Grugq\' or \'@thegrugq\'')
     parser.add_argument('-t', '--train', action='store_true', help='Training mode')
     parser.add_argument('-u', '--untrain', action='store_true', help='Untraining mode')
     parser.add_argument('-g', '--guess', action='store_true', help='Guessing mode')
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     wwts = Bayes(tokenizer=Tokenizer(lower=True))
     try:
@@ -412,10 +412,10 @@ def main():
     else:
         parser.error('argument -t/--train or -g/--guess is required')
 
-if __name__ == '__main__':
+def main(args=None):
     try:
-        main()
-        sys.exit(0)
+        run_wwts(args=args)
+        return 0
     except KeyboardInterrupt as e:
         raise e
     except SystemExit as e:
@@ -423,4 +423,36 @@ if __name__ == '__main__':
     except Exception as e:
         print(e)
         traceback.print_exc()
-        sys.exit(1)
+        return 1
+
+def wwts_guess():
+	args = sys.argv[1:]
+	return main(args=['-g', '--'] + args)
+
+def wwts_train():
+	import os, shutil
+	ROOT_DIR = os.path.join(os.path.expanduser('~/RSS'))
+	args = sys.argv[1:]
+	if len(args) < 1:
+		print("Tag must be specified!")
+		return 1
+	tag = args[0]
+	args = args[1:]
+	if len(args) < 1:
+		print("No filenames provided!")
+		return 1
+	dirname = tag.replace('good', 'other').replace('bad', 'unwanted')
+	#if [ "x$TAG" == "xgood" ]; then
+	if 0 == main(args=['-t', '-T', tag, '--'] + args):
+		if not os.path.exists(os.path.join(ROOT_DIR, dirname)):
+			os.mkdir(os.path.join(ROOT_DIR, dirname))
+		for name in args:
+			shutil.move(name, os.path.join(ROOT_DIR, dirname))
+	#elif [ "x$TAG" == "xbad" ]; then
+		#wwts -F "$@" -u -T "good" && mkdir -p "$ROOT_DIR/$TAG" && mv -- "$@" "$ROOT_DIR/$TAG"
+	#else
+		#echo "Unknown tag ${TAG}. Must be 'good' or 'bad'."
+	#fi
+
+if __name__ == '__main__':
+	sys.exit(main())

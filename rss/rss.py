@@ -5,7 +5,6 @@ import xml.parsers.expat
 import os
 import os.path
 import sys
-import guids
 import socket
 import difflib
 import urllib.request
@@ -14,7 +13,8 @@ import datetime
 import http
 import random
 import gzip
-import wwts
+from . import guids
+from . import wwts
 
 def log(*args):
 	data_dir = os.environ.get('XDG_LOG_HOME')
