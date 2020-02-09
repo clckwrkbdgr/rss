@@ -445,7 +445,7 @@ def wwts_train():
 	#if [ "x$TAG" == "xgood" ]; then
 	if 0 == main(args=['-t', '-T', tag, '--'] + args):
 		if not os.path.exists(os.path.join(ROOT_DIR, dirname)):
-			os.mkdir(os.path.join(ROOT_DIR, dirname))
+			os.makedirs(os.path.join(ROOT_DIR, dirname))
 		for name in args:
 			shutil.move(name, os.path.join(ROOT_DIR, dirname))
 	#elif [ "x$TAG" == "xbad" ]; then
