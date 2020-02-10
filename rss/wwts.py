@@ -375,7 +375,8 @@ def run_wwts(args=None):
     wwts = Bayes(tokenizer=Tokenizer(lower=True))
     try:
         wwts.load()
-    except:
+    except Exception as e:
+        traceback.print_exc()
         if args.train or args.untrain:
             pass
         elif args.guess:
@@ -424,6 +425,9 @@ def main(args=None):
         print(e)
         traceback.print_exc()
         return 1
+
+# Fixing old issue with compatibility of pickle dicts.
+sys.modules['__main__'].BayesData = BayesData
 
 def wwts_guess():
 	args = sys.argv[1:]
