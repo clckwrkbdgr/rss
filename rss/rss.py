@@ -320,7 +320,6 @@ def pull_feed(group, url, db, bayes):
 			f.write(text)
 		db.add_guid(url, guid)
 
-BayesData = wwts.BayesData
 def main():
 	global RSS_INI_FILE
 	global RSS_DIR
