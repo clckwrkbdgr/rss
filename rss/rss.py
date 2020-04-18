@@ -9,6 +9,7 @@ import socket
 import difflib
 import urllib.request
 import re
+import pprint
 import datetime
 import http
 import random
@@ -16,7 +17,12 @@ import gzip
 from . import guids
 from . import wwts
 
+DEBUG_STDERR = False
+
 def log(*args):
+	if DEBUG_STDERR:
+		print(*args, file=sys.stderr)
+		return
 	data_dir = os.environ.get('XDG_LOG_HOME')
 	if not data_dir:
 		data_dir = os.path.join(os.path.expanduser("~"), ".local", "log")
@@ -189,6 +195,7 @@ def parse_feed(url, attempts_left=3):
 		if len(text) > 2 and text[0] == 0x1f and text[1] == 0x8b:
 			# We have gzipped content here.
 			text = gzip.decompress(text)
+		text = text.lstrip()
 		text = text.replace(b'\x10', b' ')
 		text = text.replace(b'', b' ')
 		text = text.replace(b'', b' ')
@@ -325,6 +332,20 @@ def main():
 	global RSS_INI_FILE
 	global RSS_DIR
 	global GUID_FILE
+	global DEBUG_STDERR
+
+	args = sys.argv[1:] # TODO real argparse
+	if args and args[0] == '--debug':
+		args = args[1:]
+		if not args:
+			print('Filename/URL is missing: rss.py --debug <filename/url>')
+			return False
+		url = args[0]
+		if os.path.exists(url):
+			url = 'file://' + url
+		for item in parse_feed(url):
+			pprint.pprint(item)
+		return True
 
 	if not check_network():
 		log("Network is down")
