@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import os
 import sqlite3
 import datetime
 
@@ -38,7 +39,7 @@ class GuidDatabase:
 def clean_guids():
 	ENTRIES_TO_KEEP = 150
 	GUIDS_FILE = os.path.join(get_cache_dir(), "guids.sqlite") # FIXME redef from rss.py
-	conn = sqlite3.connect(filename)
+	conn = sqlite3.connect(GUIDS_FILE)
 	conn.text_factory = str # To prevent some dummy encoding bug.
 	c = conn.cursor()
 	c.execute("""select feed from Guids group by feed having count(*) > 100;""")
