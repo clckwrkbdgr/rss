@@ -5,7 +5,7 @@ import xml.parsers.expat
 import os
 import os.path
 import sys
-import socket
+import socket, threading, signal
 import difflib
 import urllib.request
 import re
@@ -177,6 +177,11 @@ def get_content(item):
 				return result.text
 	return ''
 
+def interrupt_fetch(feed):
+	log('Feed download interrupted: {0}'.format(feed))
+	import _thread
+	_thread.interrupt_main()
+
 DOCTYPE = b'''
 <!DOCTYPE naughtyxml [
 	<!ENTITY nbsp "&#0160;">
@@ -190,8 +195,15 @@ DOCTYPE = b'''
 def parse_feed(url, attempts_left=3):
 	try:
 		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
-		handle = urllib.request.urlopen(req)
-		text = handle.read()
+
+		timer = threading.Timer(60*60, interrupt_fetch, (url,))
+		timer.start()
+		try:
+			handle = urllib.request.urlopen(req, timeout=10*60)
+			text = handle.read()
+		finally:
+			timer.cancel()
+
 		if len(text) > 2 and text[0] == 0x1f and text[1] == 0x8b:
 			# We have gzipped content here.
 			text = gzip.decompress(text)
@@ -230,6 +242,8 @@ def parse_feed(url, attempts_left=3):
 			title = get_title(item)
 			title = title.strip() or title
 			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
+	except KeyboardInterrupt as e:
+		log(url, 'Feed download interrupted')
 	except UnicodeEncodeError as e:
 		log(url, 'unicode:', e)
 	except socket.error as e:
