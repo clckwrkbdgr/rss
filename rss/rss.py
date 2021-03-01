@@ -280,6 +280,8 @@ def parse_feed(url, attempts_left=3):
 				log(url, 'parse:', e)
 	except xml.parsers.expat.ExpatError as e:
 		log(url, 'expat:', e)
+	except:
+		logging.exception('Unknown exception when parsing feed:')
 
 def make_text(title, date, link, content):
 	return HTML_TEMPLATE.format(title, link, date, content)
