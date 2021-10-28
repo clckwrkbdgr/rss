@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import xml.parsers.expat
 import os
 import os.path
+import logging
 import sys
 import socket, threading, signal
 import difflib
@@ -341,6 +342,8 @@ def pull_feed(group, url, db, bayes):
 			parts = url.split('/');
 			title = url[-1] + '_' + title
 		filename = make_filename(savedir, title, content)
+		if not os.path.exists(os.path.dirname(filename)):
+			os.makedirs(os.path.dirname(filename))
 		with open(filename, 'w') as f:
 			f.write(text)
 		db.add_guid(url, guid)
