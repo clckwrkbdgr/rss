@@ -36,7 +36,7 @@ class GuidDatabase:
 		count = [int(f) for f, in self.c]
 		return count[0] if count else 0
 
-def clean_guids():
+def clean_guids(exclude=None, just_print=False):
 	ENTRIES_TO_KEEP = 150
 	GUIDS_FILE = os.path.join(get_cache_dir(), "guids.sqlite") # FIXME redef from rss.py
 	conn = sqlite3.connect(GUIDS_FILE)
@@ -46,6 +46,11 @@ def clean_guids():
 	conn.commit()
 	feeds = [str(f) for f, in c]
 	for feed in feeds:
+		if feed in exclude:
+			continue
+		if just_print:
+			print(feed)
+			continue
 		query = [
 				' delete from Guids ',
 				" where feed = ? ",
@@ -58,5 +63,22 @@ def clean_guids():
 				]
 		c.execute('\n'.join(query), (feed, feed, ENTRIES_TO_KEEP))
 		conn.commit()
-	c.execute('vacuum;')
+	if not just_print:
+		c.execute('vacuum;')
 	conn.commit()
+
+import click
+
+@click.group()
+def cli():
+	pass
+
+@cli.command('clean-guids')
+@click.option('--dry', is_flag=True, help='Dry run. Just print feeds that will be trimmed, one for line.')
+@click.option('-e', '--exclude', multiple=True, help='Exclude these feeds from trimming.')
+def command_clean_guids(dry=False, exclude=None):
+	""" Trims GUID queue for each feed to reduce size of gUID DB. """
+	clean_guids(exclude=exclude, just_print=dry)
+
+if __name__ == '__main__':
+	cli()

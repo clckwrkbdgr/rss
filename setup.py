@@ -10,6 +10,9 @@ setuptools.setup(
 		name='rss',
 		version=version,
 		packages=['rss'],
+		install_requires=[
+			'click',
+			],
 		entry_points={
 			"console_scripts" : [
 				'urss = rss.rss:main',
