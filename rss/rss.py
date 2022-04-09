@@ -248,17 +248,6 @@ def parse_feed(url, attempts_left=3):
 		log(url, 'Feed download interrupted')
 	except UnicodeEncodeError as e:
 		log(url, 'unicode:', e)
-	except socket.error as e:
-		try:
-			if e.code == 500:
-				if attempts_left > 0:
-					yield from parse_feed(url, attempts_left - 1)
-				else:
-					log(url, 'socket:', e)
-			else:
-				log(url, 'socket:', e)
-		except:
-			log(url, 'socket:', e)
 	except http.client.IncompleteRead as e:
 		if attempts_left > 0:
 			yield from parse_feed(url, attempts_left - 1)
@@ -267,7 +256,28 @@ def parse_feed(url, attempts_left=3):
 	except http.client.BadStatusLine as e:
 		log(url, 'bad status line:', e)
 	except urllib.error.URLError as e:
-		log(url, 'url:', e)
+		try:
+			e = e.args[0]
+			if isinstance(e, OSError) and e.errno == 110:
+				if attempts_left > 0:
+					yield from parse_feed(url, attempts_left - 1)
+				else:
+					log(url, 'url:', e)
+			else:
+				log(url, 'url:', e)
+		except:
+			log(url, 'url:', e)
+	except socket.error as e:
+		try:
+			if e.code == 500:
+				if attempts_left > 0:
+					yield from parse_feed(url, attempts_left - 1)
+				else:
+					log(url, 'socket({0}):'.format(e.code), e)
+			else:
+				log(url, 'socket({0}):'.format(e.code), e)
+		except:
+			log(url, 'socket:', e)
 	except xml.etree.ElementTree.ParseError as e:
 		if attempts_left > 0:
 			yield from parse_feed(url, attempts_left - 1)
