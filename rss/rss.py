@@ -191,6 +191,7 @@ DOCTYPE = b'''
 	<!ENTITY raquo "&#0187;">
 	<!ENTITY ndash "&#8211;">
 	<!ENTITY mdash "&#8211;">
+	<!ENTITY bull "&#8226;">
 ]>
 '''
 # Yields: guid, title, date, link, content
