@@ -211,13 +211,10 @@ def parse_feed(url, attempts_left=3):
 			# We have gzipped content here.
 			text = gzip.decompress(text)
 		text = text.lstrip()
-		text = text.replace(b'\x10', b' ')
-		text = text.replace(b'', b' ')
-		text = text.replace(b'', b' ')
-		text = text.replace(b'', b' ')
-		text = text.replace(b'\x0c', b' ') # ^L
-		text = text.replace(b'\x11', b'-')
 		text = text.replace(b'\x0d', b' ')
+		text = text.translate(None,
+				delete=b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f'
+				)
 		text = text.replace(b'& ', b'&amp; ')
 		text = re.sub(r'&([^;]{10})'.encode(), r'&amp;\1'.encode(), text)
 		rss_end_tag = text.find(b'</rss>')
