@@ -110,10 +110,14 @@ def load_ini(file_name):
 				result[group].append(line)
 	return result
 
-def fetch_items(root):
+def fetch_items(root, url=None):
 	items = []
 	if root.tag == 'rss':
-		items = root.find('channel').findall('item')
+		channel = root.find('channel')
+		if channel is None:
+			log(url, 'Malformed RSS structure, <channel> tag is missing: {0}'.format(ET.tostring(root, encoding='utf-8')))
+			return items
+		items = channel.findall('item')
 	elif root.tag == '{http://www.w3.org/2005/Atom}feed':
 		items = root.findall('{http://www.w3.org/2005/Atom}entry')
 	return items
@@ -238,7 +242,7 @@ def parse_feed(url, attempts_left=3):
 		# Normally RSS feed contains most recent items on top,
 		# so we reverse the list to match order of items with expected (natural) order of processing,
 		# e.g. so that mtimes of created files were placed in order the items were created.
-		for item in reversed(fetch_items(root)):
+		for item in reversed(fetch_items(root, url=url)):
 			title = get_title(item)
 			title = title.strip() or title
 			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
@@ -291,7 +295,7 @@ def parse_feed(url, attempts_left=3):
 	except xml.parsers.expat.ExpatError as e:
 		log(url, 'expat:', e)
 	except:
-		logging.exception('Unknown exception when parsing feed:')
+		logging.exception('Unknown exception when parsing feed: {0}'.format(url))
 
 def make_text(title, date, link, content):
 	return HTML_TEMPLATE.format(title, link, date, content)
