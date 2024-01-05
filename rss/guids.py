@@ -2,14 +2,7 @@
 import os
 import sqlite3
 import datetime
-
-def get_cache_dir(): # FIXME redef from rss.py
-	cache_dir = os.environ.get('XDG_CACHE_HOME')
-	if not cache_dir:
-		cache_dir = os.path.join(os.path.expanduser("~"), ".cache")
-	rss_cache_dir = os.path.join(cache_dir, "rss")
-	os.makedirs(rss_cache_dir, exist_ok=True)
-	return rss_cache_dir
+from . import app
 
 def _now():
 	return datetime.datetime.strftime(datetime.datetime.now(), "%Y%m%dT%H%M%S%f")
@@ -36,10 +29,9 @@ class GuidDatabase:
 		count = [int(f) for f, in self.c]
 		return count[0] if count else 0
 
-def clean_guids(exclude=None, just_print=False):
+def clean_guids(config, exclude=None, just_print=False):
 	ENTRIES_TO_KEEP = 150
-	GUIDS_FILE = os.path.join(get_cache_dir(), "guids.sqlite") # FIXME redef from rss.py
-	conn = sqlite3.connect(GUIDS_FILE)
+	conn = sqlite3.connect(config.GUID_FILE)
 	conn.text_factory = str # To prevent some dummy encoding bug.
 	c = conn.cursor()
 	c.execute("""select feed from Guids group by feed having count(*) > 100;""")
@@ -74,11 +66,15 @@ def cli():
 	pass
 
 @cli.command('clean-guids')
+@click.option('--guid-file', help='GUID file. Default is {0}.'.format(app.Config.GUID_FILE))
 @click.option('--dry', is_flag=True, help='Dry run. Just print feeds that will be trimmed, one for line.')
 @click.option('-e', '--exclude', multiple=True, help='Exclude these feeds from trimming.')
-def command_clean_guids(dry=False, exclude=None):
+def command_clean_guids(guid_file=None, dry=False, exclude=None):
 	""" Trims GUID queue for each feed to reduce size of gUID DB. """
-	clean_guids(exclude=exclude, just_print=dry)
+	config = app.Config(
+		GUID_FILE=guid_file,
+		)
+	clean_guids(config, exclude=exclude, just_print=dry)
 
 if __name__ == '__main__':
 	cli()

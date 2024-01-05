@@ -15,43 +15,21 @@ import datetime
 import http
 import random
 import gzip
+import logging
 from . import guids
 from . import wwts
+from . import app
+Log = logging.getLogger('rss')
+log = Log.warning
 
-DEBUG_STDERR = False
-
-def log(*args):
-	if DEBUG_STDERR:
-		print(*args, file=sys.stderr)
-		return
-	data_dir = os.environ.get('XDG_LOG_HOME')
+def get_log_file(*args):
+	data_dir = os.environ.get('XDG_STATE_HOME')
 	if not data_dir:
-		data_dir = os.path.join(os.path.expanduser("~"), ".local", "log")
+		data_dir = os.path.join(os.path.expanduser("~"), ".state")
 	logdir = os.path.join(data_dir, "rss")
 	os.makedirs(logdir, exist_ok=True)
-	with open(os.path.join(logdir, "rss.log"), "a") as logfile:
-		isonow = datetime.datetime.now().isoformat(' ')
-		logfile.write("{0}:{1}\n".format(isonow, ' '.join([str(arg) for arg in args])))
+	return os.path.join(logdir, "rss.log")
 
-def get_data_dir():
-	data_dir = os.environ.get('XDG_DATA_HOME')
-	if not data_dir:
-		data_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
-	rss_data_dir = os.path.join(data_dir, "rss")
-	os.makedirs(rss_data_dir, exist_ok=True)
-	return rss_data_dir
-
-def get_cache_dir():
-	cache_dir = os.environ.get('XDG_CACHE_HOME')
-	if not cache_dir:
-		cache_dir = os.path.join(os.path.expanduser("~"), ".cache")
-	rss_cache_dir = os.path.join(cache_dir, "rss")
-	os.makedirs(rss_cache_dir, exist_ok=True)
-	return rss_cache_dir
-
-RSS_INI_FILE = os.path.join(get_data_dir(), 'rss.ini')
-RSS_DIR = os.path.join(os.path.expanduser("~"), 'RSS')
-GUID_FILE = os.path.join(get_cache_dir(), "guids.sqlite")
 UNPRINTABLE = r'/?'
 MAX_FILE_NAME_LENGTH = 70
 HTML_TEMPLATE = """<html>
@@ -115,7 +93,7 @@ def fetch_items(root, url=None):
 	if root.tag == 'rss':
 		channel = root.find('channel')
 		if channel is None:
-			log(url, 'Malformed RSS structure, <channel> tag is missing: {0}'.format(ET.tostring(root, encoding='utf-8')))
+			log('{1}: Malformed RSS structure, <channel> tag is missing: {0}'.format(ET.tostring(root, encoding='utf-8'), url))
 			return items
 		items = channel.findall('item')
 	elif root.tag == '{http://www.w3.org/2005/Atom}feed':
@@ -201,6 +179,7 @@ DOCTYPE = b'''
 # Yields: guid, title, date, link, content
 def parse_feed(url, attempts_left=3):
 	try:
+		Log.debug('Requesting...')
 		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
 
 		timer = threading.Timer(60*60, interrupt_fetch, (url,))
@@ -212,7 +191,7 @@ def parse_feed(url, attempts_left=3):
 			timer.cancel()
 
 		if len(text) > 2 and text[0] == 0x1f and text[1] == 0x8b:
-			# We have gzipped content here.
+			Log.debug('We have gzipped content here.')
 			text = gzip.decompress(text)
 		text = text.lstrip()
 		text = text.replace(b'\x0d', b' ')
@@ -235,6 +214,7 @@ def parse_feed(url, attempts_left=3):
 				text = b'<?xml version="1.0" encoding="UTF-8"?>' + DOCTYPE + text
 			else:
 				text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
+		Log.debug('Loaded raw data.')
 		root = ET.fromstring(text)
 		if root.tag not in ['rss', '{http://www.w3.org/2005/Atom}feed']:
 			log('{0} at {1} instead of <rss> or <feed>'.format(root.tag, url))
@@ -242,21 +222,23 @@ def parse_feed(url, attempts_left=3):
 		# Normally RSS feed contains most recent items on top,
 		# so we reverse the list to match order of items with expected (natural) order of processing,
 		# e.g. so that mtimes of created files were placed in order the items were created.
+		Log.debug('Parsing XML...')
 		for item in reversed(fetch_items(root, url=url)):
 			title = get_title(item)
 			title = title.strip() or title
+			Log.debug('Fetched item: {0}'.format(repr(title)))
 			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
 	except KeyboardInterrupt as e:
-		log(url, 'Feed download interrupted')
+		log('{0}: Feed download interrupted'.format(url))
 	except UnicodeEncodeError as e:
-		log(url, 'unicode:', e)
+		log('{0}: unicode: {1}'.format(url, e))
 	except http.client.IncompleteRead as e:
 		if attempts_left > 0:
 			yield from parse_feed(url, attempts_left - 1)
 		else:
-			log(url, 'incomplete read:', e)
+			log('{0}: incomplete read: {1}'.format(url, e))
 	except http.client.BadStatusLine as e:
-		log(url, 'bad status line:', e)
+		log('{0}: bad status line: {1}'.format(url, e))
 	except urllib.error.URLError as e:
 		try:
 			e = e.args[0]
@@ -264,22 +246,22 @@ def parse_feed(url, attempts_left=3):
 				if attempts_left > 0:
 					yield from parse_feed(url, attempts_left - 1)
 				else:
-					log(url, 'url:', e)
+					log('{0}: url: {1}'.format(url, e))
 			else:
-				log(url, 'url:', e)
+				log('{0}: url: {1}'.format(url, e))
 		except:
-			log(url, 'url:', e)
+			log('{0}: url: {1}'.format(url, e))
 	except socket.error as e:
 		try:
 			if e.code == 500:
 				if attempts_left > 0:
 					yield from parse_feed(url, attempts_left - 1)
 				else:
-					log(url, 'socket({0}):'.format(e.code), e)
+					log('{1}: socket({0}): {2}'.format(e.code, url, e))
 			else:
-				log(url, 'socket({0}):'.format(e.code), e)
+				log('{1}: socket({0}): {2}'.format(e.code, url, e))
 		except:
-			log(url, 'socket:', e)
+			log('{0}: socket: {1}'.format(url, e))
 	except xml.etree.ElementTree.ParseError as e:
 		if attempts_left > 0:
 			yield from parse_feed(url, attempts_left - 1)
@@ -291,11 +273,11 @@ def parse_feed(url, attempts_left=3):
 					"unclosed token: line 7",
 					]
 			if not any(pattern in str(e) for pattern in incomplete_read_patterns):
-				log(url, 'parse:', e)
+				log('{0}: parse: {1}'.format(url, e))
 	except xml.parsers.expat.ExpatError as e:
-		log(url, 'expat:', e)
+		log('{0}: expat: {1}'.format(url, e))
 	except:
-		logging.exception('Unknown exception when parsing feed: {0}'.format(url))
+		Log.exception('Unknown exception when parsing feed: {0}'.format(url))
 
 def make_text(title, date, link, content):
 	return HTML_TEMPLATE.format(title, link, date, content)
@@ -310,7 +292,7 @@ def extract_tags_from_text(text):
 		tags = soup.find_all('a', class_='tag')
 		return [tag.text for tag in tags]
 	except TypeError as e:
-		log('type:', e)
+		log('type: {0}'.format(e))
 	return []
 
 def make_filename(path, title, text):
@@ -326,17 +308,21 @@ def make_filename(path, title, text):
 		filename += '_'
 	return os.path.join(path, filename + '.html')
 
-def pull_feed(group, url, db, bayes):
+def pull_feed(config, group, url, db, bayes):
 	for guid, title, date, link, content in parse_feed(url):
 		if db.guid_exists(url, guid):
+			Log.debug('GUID already exists, skipping.')
 			continue
 		if guid.startswith('http://') and db.guid_exists(url, guid.replace('http://', 'https://')):
+			Log.debug('GUID already exists (http<->https), skipping.')
 			continue
 		if guid.startswith('https://') and db.guid_exists(url, guid.replace('https://', 'http://')):
+			Log.debug('GUID already exists (https<->http), skipping.')
 			continue
 
-		savedir = RSS_DIR
+		savedir = config.RSS_DIR
 		if bayes is not None:
+			Log.debug('Guessing Bayes tag...')
 			text_to_guess = content if content is not None else ""
 			text_to_guess += title if title is not None else ""
 			text_to_guess += link if link is not None else ""
@@ -347,50 +333,105 @@ def pull_feed(group, url, db, bayes):
 				bayes_result['bad'] = 0
 			if bayes_result['bad'] > bayes_result['good']:
 				savedir = os.path.join(savedir, 'unwanted')
+				Log.debug('  Bad. Saving to: {0}'.format(savedir))
 			else:
 				savedir = os.path.join(savedir, group)
+				Log.debug('  Good. Saving to: {0}'.format(savedir))
 		else:
-			# Assume as always good.
+			Log.debug('  Bayes is off. Assuming as always good.')
 			savedir = os.path.join(savedir, group)
+			Log.debug('  Saving to: {0}'.format(savedir))
 
 		text = make_text(title, date, link, content)
 		if 'twitter.com' in url or 'twitter-rss.com' in url:
 			parts = url.split('/');
 			title = url[-1] + '_' + title
 		filename = make_filename(savedir, title, content)
+		Log.debug('Saving as: {0}'.format(filename))
 		if not os.path.exists(os.path.dirname(filename)):
 			os.makedirs(os.path.dirname(filename))
 		with open(filename, 'w') as f:
 			f.write(text)
+		Log.debug('Remembering GUID: {0}'.format(guid))
 		db.add_guid(url, guid)
 
-def main():
-	global RSS_INI_FILE
-	global RSS_DIR
-	global GUID_FILE
-	global DEBUG_STDERR
+import click
 
-	args = sys.argv[1:] # TODO real argparse
-	if args and args[0] == '--debug':
-		args = args[1:]
-		if not args:
-			print('Filename/URL is missing: rss.py --debug <filename/url>')
-			return False
-		url = args[0]
+def init_logger(logger, filename, debug=False):
+	logger = logging.getLogger(logger)
+
+	if logger.handlers:
+		for _handler in logger.handlers[:]:
+			logger.removeHandler(_handler)
+	logger.propagate = False
+
+	level = logging.WARNING
+	if debug:
+		level = logging.DEBUG
+
+	if debug:
+		stream_handler = logging.StreamHandler(sys.stderr)
+		fmt_string = '[%(levelname)s] %(name)s: %(message)s'
+		stream_handler.setFormatter(logging.Formatter(fmt_string,
+			datefmt='%Y-%m-%d %H:%M:%S',
+			))
+		logger.addHandler(stream_handler)
+
+	file_handler = logging.FileHandler(str(filename), delay=True, encoding='utf-8')
+	file_handler.setFormatter(logging.Formatter(
+		'%(asctime)s:%(name)s:%(levelname)s: %(message)s',
+		datefmt='%Y-%m-%d %H:%M:%S',
+		))
+	logger.addHandler(file_handler)
+	logger.setLevel(level)
+
+@click.command()
+@click.option('--debug', is_flag=True, help='Print debug traces.')
+@click.option('--test', help='Test single feed (URL or local path) and exit.')
+@click.option('--guid-file', help='GUID file. Default is {0}.'.format(app.Config.GUID_FILE))
+@click.option('--dest-dir', help='Directory to store downloaded feeds. Default is {0}.'.format(app.Config.RSS_DIR))
+@click.option('--config-file', help='File with feed definitions. Default is {0}.'.format(app.Config.RSS_INI_FILE))
+@click.option('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
+@click.argument('groups', nargs=-1)
+def main(groups, debug=False, test=None,
+	guid_file=None, dest_dir=None, config_file=None, train_dir=None,
+	):
+	""" Fetches given groups of feeds defined in RSS config file,
+	parses and stores posts in dest. directory.
+	GUID file is used to track already fetched feed items.
+	"""
+
+	init_logger('rss', get_log_file(), debug=debug)
+	Log.debug('GUID file: {0}'.format(guid_file))
+	Log.debug('RSS dir: {0}'.format(dest_dir))
+	Log.debug('INI file: {0}'.format(config_file))
+	Log.debug('WWTS train dir: {0}'.format(train_dir))
+	config = app.Config(
+		GUID_FILE=guid_file,
+		RSS_DIR=dest_dir,
+		RSS_INI_FILE=config_file,
+		TRAIN_ROOT_DIR=train_dir,
+		)
+
+	if test:
+		url = test
 		if os.path.exists(url):
 			url = 'file://' + url
+		Log.debug('Fetching single feed: {0}'.format(url))
 		for item in parse_feed(url):
 			pprint.pprint(item)
-		return True
+		return
 
 	if not check_network():
 		log("Network is down")
 		return
 
-	rsslinks = load_ini(RSS_INI_FILE )
+	Log.debug('Loading config file: {0}'.format(config.RSS_INI_FILE))
+	rsslinks = load_ini(config.RSS_INI_FILE)
+	Log.debug('Loaded {0} groups.'.format(len(rsslinks)))
 	available_groups = rsslinks.keys()
-	groups = sys.argv[1:]
 	if not groups:
+		Log.info('Groups were not specified. Fetching everything.')
 		groups = available_groups
 	has_incorrect_groups = False
 	for group in groups:
@@ -402,19 +443,25 @@ def main():
 		groups = [group for group in groups if group in available_groups]
 		log("Will load following groups: {0}".format(' '.join(groups)))
 
-	db = guids.GuidDatabase(GUID_FILE)
-	bayes = wwts.Bayes(tokenizer=wwts.Tokenizer(lower=True))
+	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
+	db = guids.GuidDatabase(config.GUID_FILE)
+	Log.debug('Opening Bayes from dir: {0}'.format(config.TRAIN_ROOT_DIR))
+	bayes = wwts.Bayes(config, tokenizer=wwts.Tokenizer(lower=True))
 	try:
 		bayes.load()
+		Log.debug('Loaded bayes data.')
 	except Exception as e:
-		log('bayes:', e)
+		log('bayes: {0}'.format(e))
 
 	for group in groups:
+		Log.debug('Processing group: {0}'.format(group))
 		for url in rsslinks[group]:
+			Log.debug('Processing URL: {0}'.format(url))
 			if url.startswith('+'):
-				pull_feed(group, url.lstrip('+'), db, None)
+				Log.debug('  Bayes is switched off.')
+				pull_feed(config, group, url.lstrip('+'), db, None)
 			else:
-				pull_feed(group, url, db, bayes)
+				pull_feed(config, group, url, db, bayes)
 	db.close()
 
 if __name__ == "__main__":

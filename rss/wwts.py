@@ -30,16 +30,7 @@ try:
 	from sets import Set
 except ImportError:
 	Set = set
-
-def get_data_dir():
-	config_dir = os.environ.get('XDG_DATA_HOME')
-	if not config_dir:
-		config_dir = os.path.join(os.path.expanduser("~"), ".local", "share")
-	rss_data_dir = os.path.join(config_dir, "rss")
-	os.makedirs(rss_data_dir, exist_ok=True)
-	return rss_data_dir
-
-DATA_DIRECTORY = get_data_dir()
+from . import app
 
 class BayesData(dict):
 
@@ -59,7 +50,8 @@ class BayesData(dict):
 
 class Bayes(object):
 
-    def __init__(self, tokenizer=None, combiner=None, dataClass=None):
+    def __init__(self, config, tokenizer=None, combiner=None, dataClass=None):
+        self.config = config
         if dataClass is None:
             self.dataClass = BayesData
         else:
@@ -130,12 +122,12 @@ class Bayes(object):
         return [tok for tok, count in self.poolData(poolName)]
 
     def save(self, fname='train.pkl'):
-        fp = open(os.path.join(DATA_DIRECTORY, fname), 'wb')
+        fp = open(os.path.join(self.config.TRAIN_ROOT_DIR, fname), 'wb')
         pickle.dump(self.pools, fp)
         fp.close()
 
     def load(self, fname='train.pkl'):
-        fp = open(os.path.join(DATA_DIRECTORY, fname), 'rb')
+        fp = open(os.path.join(self.config.TRAIN_ROOT_DIR, fname), 'rb')
         self.pools = pickle.load(fp)
         fp.close()
         self.corpus = self.pools['__Corpus__']
@@ -326,7 +318,7 @@ class Tokenizer:
     It expects a string and can return all tokens lower-cased
     or in their existing case.
     """
-    WORD_RE = re.compile('\w+', re.U)
+    WORD_RE = re.compile(r'\w+', re.U)
 
     def __init__(self, lower=False):
         self.lower = lower
@@ -363,16 +355,23 @@ def chi2P(chi, df):
 
 ## BAYES END
 
-def run_wwts(args=None):
-    parser = argparse.ArgumentParser(description='Who wrote this shit?')
-    parser.add_argument('file', nargs='+', help='Input file')
-    parser.add_argument('-T', '--tag', help='Tag, e.g. \'Thaddeus T. Grugq\' or \'@thegrugq\'')
-    parser.add_argument('-t', '--train', action='store_true', help='Training mode')
-    parser.add_argument('-u', '--untrain', action='store_true', help='Untraining mode')
-    parser.add_argument('-g', '--guess', action='store_true', help='Guessing mode')
-    args = parser.parse_args(args)
+def parse_args(args=None):
+	parser = argparse.ArgumentParser(description='Who wrote this shit?')
+	parser.add_argument('file', nargs='+', help='Input file')
+	parser.add_argument('-T', '--tag', help='Tag, e.g. \'Thaddeus T. Grugq\' or \'@thegrugq\'')
+	parser.add_argument('-t', '--train', action='store_true', help='Training mode')
+	parser.add_argument('-u', '--untrain', action='store_true', help='Untraining mode')
+	parser.add_argument('-g', '--guess', action='store_true', help='Guessing mode')
+	parser.add_argument('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
+	args = parser.parse_args(args)
+	return args
 
-    wwts = Bayes(tokenizer=Tokenizer(lower=True))
+def run_wwts(args):
+    config = app.Config(
+    		TRAIN_ROOT_DIR=args.train_dir,
+    		)
+
+    wwts = Bayes(config, tokenizer=Tokenizer(lower=True))
     try:
         wwts.load()
     except Exception as e:
@@ -415,7 +414,7 @@ def run_wwts(args=None):
 
 def main(args=None):
     try:
-        run_wwts(args=args)
+        run_wwts(args)
         return 0
     except KeyboardInterrupt as e:
         raise e
@@ -430,24 +429,32 @@ def main(args=None):
 sys.modules['__main__'].BayesData = BayesData
 
 def wwts_guess():
-	args = sys.argv[1:]
-	return main(args=['-g', '--'] + args)
+	parser = argparse.ArgumentParser(description='Who wrote this shit?')
+	parser.add_argument('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
+	parser.add_argument('file', nargs='+', help='Input file')
+	args = parser.parse_args()
+
+	args.guess = True
+	return main(args)
 
 def wwts_train():
+	parser = argparse.ArgumentParser(description='Who wrote this shit?')
+	parser.add_argument('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
+	parser.add_argument('--dest-dir', help='Directory to store downloaded feeds. Default is {0}.'.format(app.Config.RSS_DIR))
+	parser.add_argument('tag', nargs=1, help='New tag')
+	parser.add_argument('file', nargs='+', help='Input file')
+	args = parser.parse_args()
+
 	import os, shutil
-	ROOT_DIR = os.path.join(os.path.expanduser('~/RSS'))
-	args = sys.argv[1:]
-	if len(args) < 1:
-		print("Tag must be specified!")
-		return 1
-	tag = args[0]
-	args = args[1:]
-	if len(args) < 1:
+	ROOT_DIR = args.dest_dir
+	tag = args.tag
+	if len(args.file) < 1:
 		print("No filenames provided!")
 		return 1
+	args.train = True
 	dirname = tag.replace('good', 'other').replace('bad', 'unwanted')
 	#if [ "x$TAG" == "xgood" ]; then
-	if 0 == main(args=['-t', '-T', tag, '--'] + args):
+	if 0 == main(args):
 		if not os.path.exists(os.path.join(ROOT_DIR, dirname)):
 			os.makedirs(os.path.join(ROOT_DIR, dirname))
 		for name in args:
@@ -459,4 +466,5 @@ def wwts_train():
 	#fi
 
 if __name__ == '__main__':
-	sys.exit(main())
+	args = parse_args()
+	sys.exit(main(args))
