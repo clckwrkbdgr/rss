@@ -446,8 +446,8 @@ def wwts_train():
 	args = parser.parse_args()
 
 	import os, shutil
-	ROOT_DIR = args.dest_dir
-	tag = args.tag
+	ROOT_DIR = args.dest_dir or app.Config.RSS_DIR
+	tag = args.tag = args.tag[0]
 	if len(args.file) < 1:
 		print("No filenames provided!")
 		return 1
@@ -457,7 +457,7 @@ def wwts_train():
 	if 0 == main(args):
 		if not os.path.exists(os.path.join(ROOT_DIR, dirname)):
 			os.makedirs(os.path.join(ROOT_DIR, dirname))
-		for name in args:
+		for name in args.file:
 			shutil.move(name, os.path.join(ROOT_DIR, dirname))
 	#elif [ "x$TAG" == "xbad" ]; then
 		#wwts -F "$@" -u -T "good" && mkdir -p "$ROOT_DIR/$TAG" && mv -- "$@" "$ROOT_DIR/$TAG"
