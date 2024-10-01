@@ -160,8 +160,9 @@ def get_content(item):
 				return result.text
 	return ''
 
-def interrupt_fetch(feed):
+def interrupt_fetch(feed, handle):
 	log('Feed download interrupted: {0}'.format(feed))
+	handle.close()
 	import _thread
 	_thread.interrupt_main()
 
@@ -182,10 +183,11 @@ def parse_feed(url, attempts_left=3):
 		Log.debug('Requesting...')
 		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
 
-		timer = threading.Timer(60*60, interrupt_fetch, (url,))
+		handle = urllib.request.urlopen(req, timeout=30)
+
+		timer = threading.Timer(60, interrupt_fetch, (url, handle))
 		timer.start()
 		try:
-			handle = urllib.request.urlopen(req, timeout=10*60)
 			text = handle.read()
 		finally:
 			timer.cancel()
