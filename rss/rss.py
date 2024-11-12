@@ -180,6 +180,17 @@ DOCTYPE = b'''
 # Yields: guid, title, date, link, content
 def parse_feed(url, attempts_left=3):
 	try:
+		text = fetch_url(url, attempts_left=attempts_left)
+		if text is None:
+			return
+		yield from parse_text(text, url)
+	except KeyboardInterrupt:
+		log('{0}: Feed download interrupted'.format(url))
+	except Exception as e:
+		Log.exception('Unknown exception {1} when parsing feed: {0}'.format(url, e))
+
+def fetch_url(url, attempts_left=3):
+	try:
 		Log.debug('Requesting...')
 		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
 
@@ -187,11 +198,46 @@ def parse_feed(url, attempts_left=3):
 
 		timer = threading.Timer(60, interrupt_fetch, (url, handle))
 		timer.start()
+		text = None
 		try:
 			text = handle.read()
 		finally:
 			timer.cancel()
+		return text
+	except http.client.IncompleteRead as e:
+		if attempts_left > 0:
+			return fetch_url(url, attempts_left - 1)
+		else:
+			log('{0}: incomplete read: {1}'.format(url, e))
+	except http.client.BadStatusLine as e:
+		log('{0}: bad status line: {1}'.format(url, e))
+	except urllib.error.URLError as e:
+		try:
+			e = e.args[0]
+			if isinstance(e, OSError) and e.errno == 110:
+				if attempts_left > 0:
+					return fetch_url(url, attempts_left - 1)
+				else:
+					log('{0}: url: {1}'.format(url, e))
+			else:
+				log('{0}: url: {1}'.format(url, e))
+		except:
+			log('{0}: url: {1}'.format(url, e))
+	except socket.error as e:
+		try:
+			if e.code == 500:
+				if attempts_left > 0:
+					return fetch_url(url, attempts_left - 1)
+				else:
+					log('{1}: socket({0}): {2}'.format(e.code, url, e))
+			else:
+				log('{1}: socket({0}): {2}'.format(e.code, url, e))
+		except:
+			log('{0}: socket: {1}'.format(url, e))
+	return None
 
+def parse_text(text, url, attempts_left=3):
+	try:
 		if len(text) > 2 and text[0] == 0x1f and text[1] == 0x8b:
 			Log.debug('We have gzipped content here.')
 			text = gzip.decompress(text)
@@ -230,43 +276,11 @@ def parse_feed(url, attempts_left=3):
 			title = title.strip() or title
 			Log.debug('Fetched item: {0}'.format(repr(title)))
 			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
-	except KeyboardInterrupt as e:
-		log('{0}: Feed download interrupted'.format(url))
 	except UnicodeEncodeError as e:
 		log('{0}: unicode: {1}'.format(url, e))
-	except http.client.IncompleteRead as e:
-		if attempts_left > 0:
-			yield from parse_feed(url, attempts_left - 1)
-		else:
-			log('{0}: incomplete read: {1}'.format(url, e))
-	except http.client.BadStatusLine as e:
-		log('{0}: bad status line: {1}'.format(url, e))
-	except urllib.error.URLError as e:
-		try:
-			e = e.args[0]
-			if isinstance(e, OSError) and e.errno == 110:
-				if attempts_left > 0:
-					yield from parse_feed(url, attempts_left - 1)
-				else:
-					log('{0}: url: {1}'.format(url, e))
-			else:
-				log('{0}: url: {1}'.format(url, e))
-		except:
-			log('{0}: url: {1}'.format(url, e))
-	except socket.error as e:
-		try:
-			if e.code == 500:
-				if attempts_left > 0:
-					yield from parse_feed(url, attempts_left - 1)
-				else:
-					log('{1}: socket({0}): {2}'.format(e.code, url, e))
-			else:
-				log('{1}: socket({0}): {2}'.format(e.code, url, e))
-		except:
-			log('{0}: socket: {1}'.format(url, e))
 	except xml.etree.ElementTree.ParseError as e:
 		if attempts_left > 0:
-			yield from parse_feed(url, attempts_left - 1)
+			yield from parse_text(text, url, attempts_left - 1)
 		else:
 			incomplete_read_patterns = [
 					"no element found: line 6, column 0",
@@ -278,8 +292,6 @@ def parse_feed(url, attempts_left=3):
 				log('{0}: parse: {1}'.format(url, e))
 	except xml.parsers.expat.ExpatError as e:
 		log('{0}: expat: {1}'.format(url, e))
-	except:
-		Log.exception('Unknown exception when parsing feed: {0}'.format(url))
 
 def make_text(title, date, link, content):
 	return HTML_TEMPLATE.format(title, link, date, content)
@@ -455,6 +467,10 @@ def main(groups, debug=False, test=None,
 	except Exception as e:
 		log('bayes: {0}'.format(e))
 
+	import resource
+	import tracemalloc
+	import gc
+	tracemalloc.start()
 	for group in groups:
 		Log.debug('Processing group: {0}'.format(group))
 		for url in rsslinks[group]:
@@ -464,6 +480,10 @@ def main(groups, debug=False, test=None,
 				pull_feed(config, group, url.lstrip('+'), db, None)
 			else:
 				pull_feed(config, group, url, db, bayes)
+			gc.collect()
+			Log.debug('Memory usage: maxrss={0} alloc={1} @ {2}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory(), url))
+	Log.debug('Final memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
+	tracemalloc.stop()
 	db.close()
 
 if __name__ == "__main__":
