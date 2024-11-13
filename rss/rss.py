@@ -6,9 +6,9 @@ import os
 import os.path
 import logging
 import sys
-import socket, threading, signal
+import socket, threading, multiprocessing.pool, signal
 import difflib
-import urllib.request
+import urllib.request, urllib.parse
 import re
 import pprint
 import datetime
@@ -16,6 +16,8 @@ import http
 import random
 import gzip
 import logging
+import resource, tracemalloc, gc
+from collections import defaultdict
 from . import guids
 from . import wwts
 from . import app
@@ -302,7 +304,7 @@ def extract_tags_from_text(text):
 		with warnings.catch_warnings():
 			# Ignore MarkupResemblesLocatorWarning
 			warnings.simplefilter('ignore')
-			soup = bs4.BeautifulSoup(text, "html5lib")
+			soup = bs4.BeautifulSoup(text)
 		tags = soup.find_all('a', class_='tag')
 		return [tag.text for tag in tags]
 	except TypeError as e:
@@ -322,17 +324,20 @@ def make_filename(path, title, text):
 		filename += '_'
 	return os.path.join(path, filename + '.html')
 
+pull_feed_lock = threading.Lock()
+
 def pull_feed(config, group, url, db, bayes):
 	for guid, title, date, link, content in parse_feed(url):
-		if db.guid_exists(url, guid):
-			Log.debug('GUID already exists, skipping.')
-			continue
-		if guid.startswith('http://') and db.guid_exists(url, guid.replace('http://', 'https://')):
-			Log.debug('GUID already exists (http<->https), skipping.')
-			continue
-		if guid.startswith('https://') and db.guid_exists(url, guid.replace('https://', 'http://')):
-			Log.debug('GUID already exists (https<->http), skipping.')
-			continue
+		with pull_feed_lock:
+			if db.guid_exists(url, guid):
+				Log.debug('GUID already exists, skipping.')
+				continue
+			if guid.startswith('http://') and db.guid_exists(url, guid.replace('http://', 'https://')):
+				Log.debug('GUID already exists (http<->https), skipping.')
+				continue
+			if guid.startswith('https://') and db.guid_exists(url, guid.replace('https://', 'http://')):
+				Log.debug('GUID already exists (https<->http), skipping.')
+				continue
 
 		savedir = config.RSS_DIR
 		if bayes is not None:
@@ -360,14 +365,16 @@ def pull_feed(config, group, url, db, bayes):
 		if 'twitter.com' in url or 'twitter-rss.com' in url:
 			parts = url.split('/');
 			title = url[-1] + '_' + title
-		filename = make_filename(savedir, title, content)
-		Log.debug('Saving as: {0}'.format(filename))
-		if not os.path.exists(os.path.dirname(filename)):
-			os.makedirs(os.path.dirname(filename))
+		with pull_feed_lock:
+			filename = make_filename(savedir, title, content)
+			Log.debug('Saving as: {0}'.format(filename))
+			if not os.path.exists(os.path.dirname(filename)):
+				os.makedirs(os.path.dirname(filename))
 		with open(filename, 'w') as f:
 			f.write(text)
 		Log.debug('Remembering GUID: {0}'.format(guid))
-		db.add_guid(url, guid)
+		with pull_feed_lock:
+			db.add_guid(url, guid)
 
 import click
 
@@ -406,14 +413,17 @@ def init_logger(logger, filename, debug=False):
 @click.option('--dest-dir', help='Directory to store downloaded feeds. Default is {0}.'.format(app.Config.RSS_DIR))
 @click.option('--config-file', help='File with feed definitions. Default is {0}.'.format(app.Config.RSS_INI_FILE))
 @click.option('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
+@click.option('--threads', type=int, default=4, help='Enables fetching feeds in parallel threads with specified number of thread pool workers (default is 4). Set to 0 to disable thread pool.')
 @click.argument('groups', nargs=-1)
 def main(groups, debug=False, test=None,
 	guid_file=None, dest_dir=None, config_file=None, train_dir=None,
+		 threads=4,
 	):
 	""" Fetches given groups of feeds defined in RSS config file,
 	parses and stores posts in dest. directory.
 	GUID file is used to track already fetched feed items.
 	"""
+	assert threads >= 0 # TODO click type=... checker instead.
 
 	init_logger('rss', get_log_file(), debug=debug)
 	Log.debug('GUID file: {0}'.format(guid_file))
@@ -467,23 +477,42 @@ def main(groups, debug=False, test=None,
 	except Exception as e:
 		log('bayes: {0}'.format(e))
 
-	import resource
-	import tracemalloc
-	import gc
-	tracemalloc.start()
+	jobs = defaultdict(list)
 	for group in groups:
 		Log.debug('Processing group: {0}'.format(group))
 		for url in rsslinks[group]:
 			Log.debug('Processing URL: {0}'.format(url))
+
+			use_bayes = bayes
 			if url.startswith('+'):
 				Log.debug('  Bayes is switched off.')
-				pull_feed(config, group, url.lstrip('+'), db, None)
+				url = url.lstrip('+')
+				use_bayes = None
+
+			parts = urllib.parse.urlparse(url)
+			if parts.scheme == 'file':
+				job_key = url
 			else:
-				pull_feed(config, group, url, db, bayes)
-			gc.collect()
+				job_key = parts.netloc
+			jobs[job_key].append((pull_feed, (config, group, url, db, use_bayes)))
+
+	tracemalloc.start()
+	def _worker(job_key, job_group):
+		Log.debug('Running jobs for {0}'.format(job_key))
+		for job, args in job_group:
+			Log.debug('Running job: {0}'.format(args))
+			job(*args)
 			Log.debug('Memory usage: maxrss={0} alloc={1} @ {2}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory(), url))
+		gc.collect()
+	if threads:
+		with multiprocessing.pool.ThreadPool(processes=threads) as pool:
+			list(pool.starmap(_worker, jobs.items()))
+	else:
+		for data in jobs.items():
+			_worker(*data)
 	Log.debug('Final memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
 	tracemalloc.stop()
+
 	db.close()
 
 if __name__ == "__main__":

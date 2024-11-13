@@ -137,7 +137,7 @@ class Bayes(object):
         """Return a sorted list of Pool names.
         Does not include the system pool '__Corpus__'.
         """
-        pools = self.pools.keys()
+        pools = list(self.pools.keys())
         pools.remove('__Corpus__')
         pools = [pool for pool in pools]
         pools.sort()

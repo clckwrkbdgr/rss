@@ -9,7 +9,7 @@ def _now():
 
 class GuidDatabase:
 	def __init__(self, filename):
-		self.conn = sqlite3.connect(filename)
+		self.conn = sqlite3.connect(filename, check_same_thread=False) # To allow multithreading access.
 		self.conn.text_factory = str # To prevent some dummy encoding bug.
 		self.c = self.conn.cursor()
 		self.c.execute("""create table if not exists Guids (feed text, guid text, datetime text);""")
