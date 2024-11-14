@@ -10,7 +10,7 @@ import socket, threading, multiprocessing.pool, signal
 import difflib
 import urllib.request, urllib.parse
 import re
-import pprint
+import pprint, textwrap
 import datetime
 import http
 import random
@@ -178,7 +178,7 @@ DOCTYPE = b'''
 	<!ENTITY mdash "&#8211;">
 	<!ENTITY bull "&#8226;">
 ]>
-'''
+'''.replace(b'\n', b'')
 # Yields: guid, title, date, link, content
 def parse_feed(url, attempts_left=3):
 	try:
@@ -253,18 +253,11 @@ def parse_text(text, url, attempts_left=3):
 		rss_end_tag = text.find(b'</rss>')
 		if rss_end_tag > -1:
 			text = text[:rss_end_tag+len(b'</rss>')]
-		if attempts_left == 2:
+		if attempts_left == 1:
 			text = text.replace(b'\x92', b"'")
 		if attempts_left == 0:
 			pass #text = text.replace(b'\xfc', b'u') # Quickfix for incorrect encoding.
-		if attempts_left < 2:
-			xml_decl_start = text.find(b'<') + 1
-			xml_decl_end = text.find(b'>') + 1
-			if text[xml_decl_start:xml_decl_start+4] != b'?xml':
-				text = b'<?xml version="1.0" encoding="UTF-8"?>' + DOCTYPE + text
-			else:
-				text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
-		Log.debug('Loaded raw data.')
+		Log.debug('Loaded raw data: {0}'.format(textwrap.shorten(repr(text), width=100)))
 		root = ET.fromstring(text)
 		if root.tag not in ['rss', '{http://www.w3.org/2005/Atom}feed']:
 			log('{0} at {1} instead of <rss> or <feed>'.format(root.tag, url))
@@ -281,7 +274,15 @@ def parse_text(text, url, attempts_left=3):
 	except UnicodeEncodeError as e:
 		log('{0}: unicode: {1}'.format(url, e))
 	except xml.etree.ElementTree.ParseError as e:
+		Log.debug(e)
 		if attempts_left > 0:
+			if 'undefined entity' in str(e):
+				xml_decl_start = text.find(b'<') + 1
+				xml_decl_end = text.find(b'>') + 1
+				if text[xml_decl_start:xml_decl_start+4] != b'?xml':
+					text = b'<?xml version="1.0" encoding="UTF-8"?>' + DOCTYPE + text
+				else:
+					text = text[:xml_decl_end] + DOCTYPE + text[xml_decl_end:]
 			yield from parse_text(text, url, attempts_left - 1)
 		else:
 			incomplete_read_patterns = [
@@ -398,12 +399,14 @@ def init_logger(logger, filename, debug=False):
 			))
 		logger.addHandler(stream_handler)
 
-	file_handler = logging.FileHandler(str(filename), delay=True, encoding='utf-8')
-	file_handler.setFormatter(logging.Formatter(
-		'%(asctime)s:%(name)s:%(levelname)s: %(message)s',
-		datefmt='%Y-%m-%d %H:%M:%S',
-		))
-	logger.addHandler(file_handler)
+	if filename:
+		file_handler = logging.FileHandler(str(filename), delay=True, encoding='utf-8')
+		file_handler.setFormatter(logging.Formatter(
+			'%(asctime)s:%(name)s:%(levelname)s: %(message)s',
+			datefmt='%Y-%m-%d %H:%M:%S',
+			))
+		logger.addHandler(file_handler)
+
 	logger.setLevel(level)
 
 @click.command()
@@ -425,7 +428,7 @@ def main(groups, debug=False, test=None,
 	"""
 	assert threads >= 0 # TODO click type=... checker instead.
 
-	init_logger('rss', get_log_file(), debug=debug)
+	init_logger('rss', get_log_file() if test is None else None, debug=debug)
 	Log.debug('GUID file: {0}'.format(guid_file))
 	Log.debug('RSS dir: {0}'.format(dest_dir))
 	Log.debug('INI file: {0}'.format(config_file))
