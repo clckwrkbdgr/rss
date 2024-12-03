@@ -34,19 +34,99 @@ from . import app
 
 class BayesData(dict):
 
-	def __init__(self, name='', pool=None):
+	def __init__(self, name=''):
 		self.name = name
 		self.training = []
-		self.pool = pool
+		self.pool = None
 		self.tokenCount = 0
 		self.trainCount = 0
 
-	def trainedOn(self, item):
-		return item in self.training
+class Pools:
+	def __init__(self, store_dir, dataClass=None):
+		if dataClass is None:
+			self.dataClass = BayesData
+		else:
+			self.dataClass = dataClass
+		self.store_dir = store_dir
+		self.pools = {}
+		self.corpus = self.dataClass('__Corpus__')
+		self.pools['__Corpus__'] = self.corpus
+	def get_pool_tokenCount(self, name):
+		return self.pools.get(name).tokenCount
+	def iter_pool_corpus_words(self, pname):
+		for word, totCount in self.pools['__Corpus__'].items():
+			# for every word in the copus
+			# check to see if this pool contains this word
+			thisCount = float(self.pools[pname].get(word, 0.0))
+			if (thisCount == 0.0): continue
+			yield word, totCount, thisCount
+	def pool_inc_token(self, pool_name, token):
+		pool = self.pools[pool_name]
+		count = pool.get(token, 0)
+		pool[token] =  count + 1
+	def pool_dec_token(self, pool_name, token):
+		pool = self.pools[pool_name]
+		count = pool.get(token, 0)
+		if count:
+			if count == 1:
+				del(pool[token])
+			else:
+				pool[token] =  count - 1
+			self.adjust_token_count(pool_name, -1)
+	def has_pool(self, name):
+		return name in self.pools
+	def add_training(self, pool_name):
+		self.pools[pool_name].trainCount += 1
+	def adjust_token_count(self, pool_name, wc):
+		self.pools[pool_name].tokenCount += wc
+	def add_trained_uid(self, pool_name, uid):
+		self.pools[pool_name].training.append(uid)
+	def remove_trained_uid(self, pool_name, uid):
+		self.pools[pool_name].training.remove(uid)
 
-	def __repr__(self):
-		return '<BayesDict: %s, %s tokens>' % (self.name, self.tokenCount)
-
+	def newPool(self, poolName):
+		"""Create a new pool, without actually doing any
+		training.
+		"""
+		self.pools.setdefault(poolName, self.dataClass(poolName))
+	def removePool(self, poolName):
+		del(self.pools[poolName])
+	def renamePool(self, poolName, newName):
+		self.pools[newName] = self.pools[poolName]
+		self.pools[newName].name = newName
+		self.removePool(poolName)
+	def mergePools(self, destPool, sourcePool):
+		"""Merge an existing pool into another.
+		The data from sourcePool is merged into destPool.
+		The arguments are the names of the pools to be merged.
+		The pool named sourcePool is left in tact and you may
+		want to call removePool() to get rid of it.
+		"""
+		sp = self.pools[sourcePool]
+		dp = self.pools[destPool]
+		for tok, count in sp.items():
+			if dp.get(tok):
+				dp[tok] += count
+			else:
+				dp[tok] = count
+				dp.tokenCount += 1
+	def save(self, fname='train.pkl'):
+		fp = open(os.path.join(self.store_dir, fname), 'wb')
+		pickle.dump(self.pools, fp)
+		fp.close()
+	def load(self, fname='train.pkl'):
+		fp = open(os.path.join(self.store_dir, fname), 'rb')
+		self.pools = pickle.load(fp)
+		fp.close()
+	def poolNames(self):
+		"""Return a sorted list of Pool names.
+		Does not include the system pool '__Corpus__'.
+		"""
+		pools = list(self.pools.keys())
+		pools.remove('__Corpus__')
+		pools = [pool for pool in pools]
+		pools.sort()
+		return pools
 
 class Bayes(object):
 
@@ -56,10 +136,7 @@ class Bayes(object):
 			self.dataClass = BayesData
 		else:
 			self.dataClass = dataClass
-		self.corpus = self.dataClass('__Corpus__')
-		self.pools = {}
-		self.pools['__Corpus__'] = self.corpus
-		self.trainCount = 0
+		self.pools = Pools(self.config.TRAIN_ROOT_DIR, dataClass=dataClass)
 		self.dirty = True
 		# The tokenizer takes an object and returns
 		# a list of strings
@@ -78,89 +155,41 @@ class Bayes(object):
 		self.save()
 
 	def newPool(self, poolName):
-		"""Create a new pool, without actually doing any
-		training.
-		"""
 		self.dirty = True # not always true, but it's simple
-		return self.pools.setdefault(poolName, self.dataClass(poolName))
+		self.pools.newPool(poolName)
 
 	def removePool(self, poolName):
-		del(self.pools[poolName])
+		self.pools.removePool(poolName)
 		self.dirty = True
 
 	def renamePool(self, poolName, newName):
-		self.pools[newName] = self.pools[poolName]
-		self.pools[newName].name = newName
-		self.removePool(poolName)
+		self.pools.renamePool( poolName, newName)
 		self.dirty = True
 
 	def mergePools(self, destPool, sourcePool):
-		"""Merge an existing pool into another.
-		The data from sourcePool is merged into destPool.
-		The arguments are the names of the pools to be merged.
-		The pool named sourcePool is left in tact and you may
-		want to call removePool() to get rid of it.
-		"""
-		sp = self.pools[sourcePool]
-		dp = self.pools[destPool]
-		for tok, count in sp.items():
-			if dp.get(tok):
-				dp[tok] += count
-			else:
-				dp[tok] = count
-				dp.tokenCount += 1
+		self.pools.mergePools(destPool, sourcePool)
 		self.dirty = True
 
-	def poolData(self, poolName):
-		"""Return a list of the (token, count) tuples.
-		"""
-		return self.pools[poolName].items()
-
-	def poolTokens(self, poolName):
-		"""Return a list of the tokens in this pool.
-		"""
-		return [tok for tok, count in self.poolData(poolName)]
-
 	def save(self, fname='train.pkl'):
-		fp = open(os.path.join(self.config.TRAIN_ROOT_DIR, fname), 'wb')
-		pickle.dump(self.pools, fp)
-		fp.close()
+		self.pools.save()
 
 	def load(self, fname='train.pkl'):
-		fp = open(os.path.join(self.config.TRAIN_ROOT_DIR, fname), 'rb')
-		self.pools = pickle.load(fp)
-		fp.close()
-		self.corpus = self.pools['__Corpus__']
+		self.pools.load()
 		self.dirty = True
 
 	def poolNames(self):
-		"""Return a sorted list of Pool names.
-		Does not include the system pool '__Corpus__'.
-		"""
-		pools = list(self.pools.keys())
-		pools.remove('__Corpus__')
-		pools = [pool for pool in pools]
-		pools.sort()
-		return pools
+		return self.pools.poolNames()
 
 	def buildCache(self):
 		""" merges corpora and computes probabilities
 		"""
-		self.cache = {}
-		for pname, pool in self.pools.items():
-			# skip our special pool
-			if pname == '__Corpus__':
-				continue
-
-			poolCount = pool.tokenCount
-			themCount = max(self.corpus.tokenCount - poolCount, 1)
+		self.cache = {} # FIXME also merge with Pools as a separate DB instance for Cache.
+		for pname in self.pools.poolNames():
+			poolCount = self.pools.get_pool_tokenCount(pname)
+			themCount = max(self.pools.get_pool_tokenCount('__Corpus__') - poolCount, 1)
 			cacheDict = self.cache.setdefault(pname, self.dataClass(pname))
 
-			for word, totCount in self.corpus.items():
-				# for every word in the copus
-				# check to see if this pool contains this word
-				thisCount = float(pool.get(word, 0.0))
-				if (thisCount == 0.0): continue
+			for word, totCount, thisCount in self.pools.iter_pool_corpus_words(pname):
 				otherCount = float(totCount) - thisCount
 
 				if not poolCount:
@@ -204,67 +233,45 @@ class Bayes(object):
 		probs.sort(key=lambda x: x[1], reverse=True)
 		return probs[:2048]
 
-	def train(self, pool, item, uid=None):
+	def train(self, pool_name, item, uid=None):
 		"""Train Bayes by telling him that item belongs
 		in pool. uid is optional and may be used to uniquely
 		identify the item that is being trained on.
 		"""
 		tokens = self.getTokens(item)
-		pool = self.pools.setdefault(pool, self.dataClass(pool))
-		self._train(pool, tokens)
-		self.corpus.trainCount += 1
-		pool.trainCount += 1
+		self.pools.newPool(pool_name)
+		self._train(tokens, pool_name)
+		self.pools.add_training('__Corpus__')
+		self.pools.add_training(pool_name)
 		if uid:
-			pool.training.append(uid)
+			self.pools.add_trained_uid(pool_name, uid)
 		self.dirty = True
 
-	def untrain(self, pool, item, uid=None):
+	def untrain(self, pool_name, item, uid=None):
 		tokens = self.getTokens(item)
-		pool = self.pools.get(pool, None)
-		if not pool:
+		if not self.pools.has_pool(pool_name):
 			return
-		self._untrain(pool, tokens)
+		self._untrain(tokens, pool_name)
 		# I guess we want to count this as additional training?
-		self.corpus.trainCount += 1
-		pool.trainCount += 1
+		self.pools.add_training('__Corpus__')
+		self.pools.add_training(pool_name)
 		if uid:
-			pool.training.remove(uid)
+			self.pools.remove_trained_uid(pool_name, uid)
 		self.dirty = True
 
-	def _train(self, pool, tokens):
+	def _train(self, tokens, pool_name):
 		wc = 0
 		for token in tokens:
-			count = pool.get(token, 0)
-			pool[token] =  count + 1
-			count = self.corpus.get(token, 0)
-			self.corpus[token] =  count + 1
+			self.pools.pool_inc_token(pool_name, token)
+			self.pools.pool_inc_token('__Corpus__', token)
 			wc += 1
-		pool.tokenCount += wc
-		self.corpus.tokenCount += wc
+		self.pools.adjust_token_count(pool_name, wc)
+		self.pools.adjust_token_count('__Corpus__', wc)
 
-	def _untrain(self, pool, tokens):
+	def _untrain(self, tokens, pool_name):
 		for token in tokens:
-			count = pool.get(token, 0)
-			if count:
-				if count == 1:
-					del(pool[token])
-				else:
-					pool[token] =  count - 1
-				pool.tokenCount -= 1
-
-			count = self.corpus.get(token, 0)
-			if count:
-				if count == 1:
-					del(self.corpus[token])
-				else:
-					self.corpus[token] =  count - 1
-				self.corpus.tokenCount -= 1
-
-	def trainedOn(self, msg):
-		for p in self.cache.values():
-			if msg in p.training:
-				return True
-		return False
+			self.pools.pool_dec_token(pool_name, token)
+			self.pools.pool_dec_token('__Corpus__', token)
 
 	def guess(self, msg):
 		tokens = Set(self.getTokens(msg))
@@ -306,12 +313,6 @@ class Bayes(object):
 		try: S = chi2P(-2.0 * math.log(reduce(operator.mul, map(lambda p: 1.0-p[1], probs), 1.0)), 2*n)
 		except OverflowError: S = 0.0
 		return (1 + H - S) / 2
-
-	def __repr__(self):
-		return '<Bayes: %s>' % [self.pools[p] for p in self.poolNames()]
-
-	def __len__(self):
-		return len(self.corpus)
 
 class Tokenizer:
 	"""A simple regex-based whitespace tokenizer.
