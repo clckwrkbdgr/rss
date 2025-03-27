@@ -51,6 +51,9 @@ class Pools:
 		self.pools = {}
 		self.corpus = self.dataClass('__Corpus__')
 		self.pools['__Corpus__'] = self.corpus
+
+		self.cache = {}
+		self.dirty = True
 	def get_pool_tokenCount(self, name):
 		return self.pools.get(name).tokenCount
 	def iter_pool_corpus_words(self, pname):
@@ -128,6 +131,36 @@ class Pools:
 		pools.sort()
 		return pools
 
+	def buildCache(self):
+		""" merges corpora and computes probabilities
+		"""
+		if not self.dirty:
+			return self.cache
+		self.cache = {}
+		for pname in self.poolNames():
+			poolCount = self.get_pool_tokenCount(pname)
+			themCount = max(self.get_pool_tokenCount('__Corpus__') - poolCount, 1)
+			cacheDict = self.cache.setdefault(pname, self.dataClass(pname))
+
+			for word, totCount, thisCount in self.iter_pool_corpus_words(pname):
+				otherCount = float(totCount) - thisCount
+
+				if not poolCount:
+					goodMetric = 1.0
+				else:
+					goodMetric = min(1.0, otherCount/poolCount)
+				badMetric = min(1.0, thisCount/themCount)
+				f = badMetric / (goodMetric + badMetric)
+
+				# PROBABILITY_THRESHOLD
+				if abs(f-0.5) >= 0.1 :
+					# GOOD_PROB, BAD_PROB
+					cacheDict[word] = max(0.0001, min(0.9999, f))
+		self.dirty = False
+		return self.cache
+	def invalidate(self):
+		self.dirty = True
+
 class Bayes(object):
 
 	def __init__(self, config, tokenizer=None, combiner=None, dataClass=None):
@@ -137,7 +170,6 @@ class Bayes(object):
 		else:
 			self.dataClass = dataClass
 		self.pools = Pools(self.config.TRAIN_ROOT_DIR, dataClass=dataClass)
-		self.dirty = True
 		# The tokenizer takes an object and returns
 		# a list of strings
 		if tokenizer is None:
@@ -155,60 +187,30 @@ class Bayes(object):
 		self.save()
 
 	def newPool(self, poolName):
-		self.dirty = True # not always true, but it's simple
+		self.pools.invalidate() # not always true, but it's simple
 		self.pools.newPool(poolName)
 
 	def removePool(self, poolName):
 		self.pools.removePool(poolName)
-		self.dirty = True
+		self.pools.invalidate()
 
 	def renamePool(self, poolName, newName):
 		self.pools.renamePool( poolName, newName)
-		self.dirty = True
+		self.pools.invalidate()
 
 	def mergePools(self, destPool, sourcePool):
 		self.pools.mergePools(destPool, sourcePool)
-		self.dirty = True
+		self.pools.invalidate()
 
 	def save(self, fname='train.pkl'):
 		self.pools.save()
 
 	def load(self, fname='train.pkl'):
 		self.pools.load()
-		self.dirty = True
+		self.pools.invalidate()
 
 	def poolNames(self):
 		return self.pools.poolNames()
-
-	def buildCache(self):
-		""" merges corpora and computes probabilities
-		"""
-		self.cache = {} # FIXME also merge with Pools as a separate DB instance for Cache.
-		for pname in self.pools.poolNames():
-			poolCount = self.pools.get_pool_tokenCount(pname)
-			themCount = max(self.pools.get_pool_tokenCount('__Corpus__') - poolCount, 1)
-			cacheDict = self.cache.setdefault(pname, self.dataClass(pname))
-
-			for word, totCount, thisCount in self.pools.iter_pool_corpus_words(pname):
-				otherCount = float(totCount) - thisCount
-
-				if not poolCount:
-					goodMetric = 1.0
-				else:
-					goodMetric = min(1.0, otherCount/poolCount)
-				badMetric = min(1.0, thisCount/themCount)
-				f = badMetric / (goodMetric + badMetric)
-
-				# PROBABILITY_THRESHOLD
-				if abs(f-0.5) >= 0.1 :
-					# GOOD_PROB, BAD_PROB
-					cacheDict[word] = max(0.0001, min(0.9999, f))
-
-	def poolProbs(self):
-		if self.dirty:
-			self.buildCache()
-			self.dirty = False
-		return self.cache
 
 	def getTokens(self, obj):
 		"""By default, we expect obj to be a screen and split
@@ -245,7 +247,7 @@ class Bayes(object):
 		self.pools.add_training(pool_name)
 		if uid:
 			self.pools.add_trained_uid(pool_name, uid)
-		self.dirty = True
+		self.pools.invalidate()
 
 	def untrain(self, pool_name, item, uid=None):
 		tokens = self.getTokens(item)
@@ -257,7 +259,7 @@ class Bayes(object):
 		self.pools.add_training(pool_name)
 		if uid:
 			self.pools.remove_trained_uid(pool_name, uid)
-		self.dirty = True
+		self.pools.invalidate()
 
 	def _train(self, tokens, pool_name):
 		wc = 0
@@ -275,7 +277,7 @@ class Bayes(object):
 
 	def guess(self, msg):
 		tokens = Set(self.getTokens(msg))
-		pools = self.poolProbs()
+		pools = self.pools.buildCache() # FIXME also merge with Pools as a separate DB instance for Cache.
 
 		res = {}
 		for pname, pprobs in pools.items():
