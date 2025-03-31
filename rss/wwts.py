@@ -67,6 +67,7 @@ class Pools:
 		pool = self.pools[pool_name]
 		count = pool.get(token, 0)
 		pool[token] =  count + 1
+		self._invalidate()
 	def pool_dec_token(self, pool_name, token):
 		pool = self.pools[pool_name]
 		count = pool.get(token, 0)
@@ -76,28 +77,36 @@ class Pools:
 			else:
 				pool[token] =  count - 1
 			self.adjust_token_count(pool_name, -1)
+		self._invalidate()
 	def has_pool(self, name):
 		return name in self.pools
 	def add_training(self, pool_name):
 		self.pools[pool_name].trainCount += 1
+		self._invalidate()
 	def adjust_token_count(self, pool_name, wc):
 		self.pools[pool_name].tokenCount += wc
+		self._invalidate()
 	def add_trained_uid(self, pool_name, uid):
 		self.pools[pool_name].training.append(uid)
+		self._invalidate()
 	def remove_trained_uid(self, pool_name, uid):
 		self.pools[pool_name].training.remove(uid)
+		self._invalidate()
 
 	def newPool(self, poolName):
 		"""Create a new pool, without actually doing any
 		training.
 		"""
+		self._invalidate() # not always true, but it's simple
 		self.pools.setdefault(poolName, self.dataClass(poolName))
 	def removePool(self, poolName):
 		del(self.pools[poolName])
+		self._invalidate()
 	def renamePool(self, poolName, newName):
 		self.pools[newName] = self.pools[poolName]
 		self.pools[newName].name = newName
 		self.removePool(poolName)
+		self._invalidate()
 	def mergePools(self, destPool, sourcePool):
 		"""Merge an existing pool into another.
 		The data from sourcePool is merged into destPool.
@@ -113,6 +122,7 @@ class Pools:
 			else:
 				dp[tok] = count
 				dp.tokenCount += 1
+		self._invalidate()
 	def save(self, fname='train.pkl'):
 		fp = open(os.path.join(self.store_dir, fname), 'wb')
 		pickle.dump(self.pools, fp)
@@ -121,6 +131,7 @@ class Pools:
 		fp = open(os.path.join(self.store_dir, fname), 'rb')
 		self.pools = pickle.load(fp)
 		fp.close()
+		self._invalidate() # FIXME not needed when cache is loaded from DB.
 	def poolNames(self):
 		"""Return a sorted list of Pool names.
 		Does not include the system pool '__Corpus__'.
@@ -158,8 +169,25 @@ class Pools:
 					cacheDict[word] = max(0.0001, min(0.9999, f))
 		self.dirty = False
 		return self.cache
-	def invalidate(self):
+	def _invalidate(self):
 		self.dirty = True
+	def _getProbs(self, pool, words):
+		""" extracts the probabilities of tokens in a message
+		"""
+		probs = [(word, pool[word]) for word in words if word in pool]
+		probs.sort(key=lambda x: x[1], reverse=True)
+		return probs[:2048]
+	def guessProbs(self, tokens, combiner):
+		pools = self.buildCache()
+
+		res = {}
+		for pname, pprobs in pools.items():
+			p = self._getProbs(pprobs, tokens)
+			if p:
+				res[pname] = combiner(p, pname)
+		res = list(res.items())
+		res.sort(key=lambda x: x[1], reverse=True)
+		return res
 
 class Bayes(object):
 
@@ -187,27 +215,22 @@ class Bayes(object):
 		self.save()
 
 	def newPool(self, poolName):
-		self.pools.invalidate() # not always true, but it's simple
 		self.pools.newPool(poolName)
 
 	def removePool(self, poolName):
 		self.pools.removePool(poolName)
-		self.pools.invalidate()
 
 	def renamePool(self, poolName, newName):
 		self.pools.renamePool( poolName, newName)
-		self.pools.invalidate()
 
 	def mergePools(self, destPool, sourcePool):
 		self.pools.mergePools(destPool, sourcePool)
-		self.pools.invalidate()
 
 	def save(self, fname='train.pkl'):
 		self.pools.save()
 
 	def load(self, fname='train.pkl'):
 		self.pools.load()
-		self.pools.invalidate()
 
 	def poolNames(self):
 		return self.pools.poolNames()
@@ -228,13 +251,6 @@ class Bayes(object):
 		"""
 		return self._tokenizer.tokenize(obj)
 
-	def getProbs(self, pool, words):
-		""" extracts the probabilities of tokens in a message
-		"""
-		probs = [(word, pool[word]) for word in words if word in pool]
-		probs.sort(key=lambda x: x[1], reverse=True)
-		return probs[:2048]
-
 	def train(self, pool_name, item, uid=None):
 		"""Train Bayes by telling him that item belongs
 		in pool. uid is optional and may be used to uniquely
@@ -247,7 +263,6 @@ class Bayes(object):
 		self.pools.add_training(pool_name)
 		if uid:
 			self.pools.add_trained_uid(pool_name, uid)
-		self.pools.invalidate()
 
 	def untrain(self, pool_name, item, uid=None):
 		tokens = self.getTokens(item)
@@ -259,7 +274,6 @@ class Bayes(object):
 		self.pools.add_training(pool_name)
 		if uid:
 			self.pools.remove_trained_uid(pool_name, uid)
-		self.pools.invalidate()
 
 	def _train(self, tokens, pool_name):
 		wc = 0
@@ -277,16 +291,7 @@ class Bayes(object):
 
 	def guess(self, msg):
 		tokens = Set(self.getTokens(msg))
-		pools = self.pools.buildCache() # FIXME also merge with Pools as a separate DB instance for Cache.
-
-		res = {}
-		for pname, pprobs in pools.items():
-			p = self.getProbs(pprobs, tokens)
-			if len(p) != 0:
-				res[pname]=self.combiner(p, pname)
-		res = list(res.items())
-		res.sort(key=lambda x: x[1], reverse=True)
-		return res
+		return self.pools.guessProbs(tokens, self.combiner)
 
 	def robinson(self, probs, ignore):
 		""" computes the probability of a message being spam (Robinson's method)
