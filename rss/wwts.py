@@ -41,6 +41,32 @@ class BayesData(dict):
 		self.tokenCount = 0
 		self.trainCount = 0
 
+class ProbCache:
+	def __init__(self, dataClass=None):
+		self.data = None
+		if dataClass is None:
+			self.dataClass = BayesData
+		else:
+			self.dataClass = dataClass
+	def invalidate(self):
+		self.data = None
+	def valid(self):
+		return self.data is not None
+	def clear(self):
+		self.data = {}
+	def set_value(self, pname, word, value):
+		cacheDict = self.data.setdefault(pname, self.dataClass(pname))
+		cacheDict[word] = value
+	def getNames(self):
+		return set(self.data.keys())
+	def getProbs(self, pname, words):
+		""" extracts the probabilities of tokens in a message
+		"""
+		pool = self.data[pname]
+		probs = [(word, pool[word]) for word in words if word in pool]
+		probs.sort(key=lambda x: x[1], reverse=True)
+		return probs[:2048]
+
 class Pools:
 	def __init__(self, store_dir, dataClass=None):
 		if dataClass is None:
@@ -51,9 +77,7 @@ class Pools:
 		self.pools = {}
 		self.corpus = self.dataClass('__Corpus__')
 		self.pools['__Corpus__'] = self.corpus
-
-		self.cache = {}
-		self.dirty = True
+		self.cache = ProbCache(dataClass=self.dataClass)
 	def get_pool_tokenCount(self, name):
 		return self.pools.get(name).tokenCount
 	def iter_pool_corpus_words(self, pname):
@@ -67,7 +91,7 @@ class Pools:
 		pool = self.pools[pool_name]
 		count = pool.get(token, 0)
 		pool[token] =  count + 1
-		self._invalidate()
+		self.cache.invalidate()
 	def pool_dec_token(self, pool_name, token):
 		pool = self.pools[pool_name]
 		count = pool.get(token, 0)
@@ -77,36 +101,36 @@ class Pools:
 			else:
 				pool[token] =  count - 1
 			self.adjust_token_count(pool_name, -1)
-		self._invalidate()
+		self.cache.invalidate()
 	def has_pool(self, name):
 		return name in self.pools
 	def add_training(self, pool_name):
 		self.pools[pool_name].trainCount += 1
-		self._invalidate()
+		self.cache.invalidate()
 	def adjust_token_count(self, pool_name, wc):
 		self.pools[pool_name].tokenCount += wc
-		self._invalidate()
+		self.cache.invalidate()
 	def add_trained_uid(self, pool_name, uid):
 		self.pools[pool_name].training.append(uid)
-		self._invalidate()
+		self.cache.invalidate()
 	def remove_trained_uid(self, pool_name, uid):
 		self.pools[pool_name].training.remove(uid)
-		self._invalidate()
+		self.cache.invalidate()
 
 	def newPool(self, poolName):
 		"""Create a new pool, without actually doing any
 		training.
 		"""
-		self._invalidate() # not always true, but it's simple
+		self.cache.invalidate() # not always true, but it's simple
 		self.pools.setdefault(poolName, self.dataClass(poolName))
 	def removePool(self, poolName):
 		del(self.pools[poolName])
-		self._invalidate()
+		self.cache.invalidate()
 	def renamePool(self, poolName, newName):
 		self.pools[newName] = self.pools[poolName]
 		self.pools[newName].name = newName
 		self.removePool(poolName)
-		self._invalidate()
+		self.cache.invalidate()
 	def mergePools(self, destPool, sourcePool):
 		"""Merge an existing pool into another.
 		The data from sourcePool is merged into destPool.
@@ -122,7 +146,7 @@ class Pools:
 			else:
 				dp[tok] = count
 				dp.tokenCount += 1
-		self._invalidate()
+		self.cache.invalidate()
 	def save(self, fname='train.pkl'):
 		fp = open(os.path.join(self.store_dir, fname), 'wb')
 		pickle.dump(self.pools, fp)
@@ -131,7 +155,7 @@ class Pools:
 		fp = open(os.path.join(self.store_dir, fname), 'rb')
 		self.pools = pickle.load(fp)
 		fp.close()
-		self._invalidate() # FIXME not needed when cache is loaded from DB.
+		self.cache.invalidate() # FIXME not needed when cache is loaded from DB.
 	def poolNames(self):
 		"""Return a sorted list of Pool names.
 		Does not include the system pool '__Corpus__'.
@@ -142,17 +166,15 @@ class Pools:
 		pools.sort()
 		return pools
 
-	def buildCache(self):
+	def _buildCache(self):
 		""" merges corpora and computes probabilities
 		"""
-		if not self.dirty:
-			return self.cache
-		self.cache = {}
+		if self.cache.valid():
+			return
+		self.cache.clear()
 		for pname in self.poolNames():
 			poolCount = self.get_pool_tokenCount(pname)
 			themCount = max(self.get_pool_tokenCount('__Corpus__') - poolCount, 1)
-			cacheDict = self.cache.setdefault(pname, self.dataClass(pname))
-
 			for word, totCount, thisCount in self.iter_pool_corpus_words(pname):
 				otherCount = float(totCount) - thisCount
 
@@ -166,23 +188,12 @@ class Pools:
 				# PROBABILITY_THRESHOLD
 				if abs(f-0.5) >= 0.1 :
 					# GOOD_PROB, BAD_PROB
-					cacheDict[word] = max(0.0001, min(0.9999, f))
-		self.dirty = False
-		return self.cache
-	def _invalidate(self):
-		self.dirty = True
-	def _getProbs(self, pool, words):
-		""" extracts the probabilities of tokens in a message
-		"""
-		probs = [(word, pool[word]) for word in words if word in pool]
-		probs.sort(key=lambda x: x[1], reverse=True)
-		return probs[:2048]
+					self.cache.set_value(pname, word, max(0.0001, min(0.9999, f)))
 	def guessProbs(self, tokens, combiner):
-		pools = self.buildCache()
-
+		self._buildCache()
 		res = {}
-		for pname, pprobs in pools.items():
-			p = self._getProbs(pprobs, tokens)
+		for pname in self.cache.getNames():
+			p = self.cache.getProbs(pname, tokens)
 			if p:
 				res[pname] = combiner(p, pname)
 		res = list(res.items())
