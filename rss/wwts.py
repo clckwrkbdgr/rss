@@ -177,10 +177,7 @@ class Pools:
 		self.pools = {}
 		self.corpus = self.dataClass('__Corpus__')
 		self.pools['__Corpus__'] = self.corpus
-		self.cache = ChainDelegate([
-			ProbCache(dataClass=self.dataClass),
-			SQLProbCache(dataClass=self.dataClass),
-			])
+		self.cache = SQLProbCache(dataClass=self.dataClass)
 	def get_pool_tokenCount(self, name):
 		return self.pools.get(name).tokenCount
 	def iter_pool_corpus_words(self, pname):
