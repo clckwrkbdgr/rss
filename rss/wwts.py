@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import sys
+import os, sys
 import argparse
 import traceback
 import re
@@ -68,7 +68,7 @@ class ProbCache:
 		"""
 		pool = self.data[pname]
 		probs = [(word, pool[word]) for word in words if word in pool]
-		probs.sort(key=lambda x: x[1], reverse=True)
+		probs.sort(key=lambda x: (x[1], x[0]), reverse=True)
 		return probs[:2048]
 
 class ChainDelegate:
@@ -84,8 +84,9 @@ class ChainDelegate:
 					result = getattr(instance, self._name)(*args, **kwargs)
 					results.append(result)
 					str_results[str(result)].append(instance)
-				except Exception as e:
-					str_results[str(e)].append(instance)
+				except:
+					import traceback
+					str_results[traceback.format_exc()].append(instance)
 			if len(str_results) > 1:
 				print('Results are different: {0}( {1}, {2} )\n\t'.format(self._name, args, kwargs) + '\n\t'.join(list(str_results.keys())))
 			return results[0] if results else None
@@ -96,19 +97,26 @@ class ChainDelegate:
 
 class SQLProbCache:
 	def __init__(self, dataClass=None): # FIXME all access should be via transactions
+		self.in_transaction = False
 		filename = os.path.join(app.get_cache_dir(), "prob.sqlite")
-		self.conn = sqlite3.connect(filename, check_same_thread=False) # To allow multithreading access.
+		self.conn = sqlite3.connect(filename, timeout=10, check_same_thread=False) # To allow multithreading access.
 		self.conn.text_factory = str # To prevent some dummy encoding bug.
-		self.c = self.conn.cursor()
-		self.c.execute("""CREATE TABLE IF NOT EXISTS Probs (pool_name TEXT, word TEXT, value REAL);""")
+		self.conn.execute("""
+				CREATE TABLE IF NOT EXISTS Probs (
+					pool_name TEXT,
+					word TEXT,
+					value REAL,
+					PRIMARY KEY (pool_name, word)
+				)
+				;""")
 		self.conn.commit()
 	def __del__(self): # TODO should be done explicitly, e.g. with help of context manager.
-		self.c.close()
 		self.conn.close()
 	def lock(self):
 		if self.in_transaction:
 			return
 		self.in_transaction = True
+		self.conn.execute("""BEGIN;""")
 	def unlock(self):
 		if not self.in_transaction:
 			return
@@ -120,38 +128,43 @@ class SQLProbCache:
 		self.conn.commit()
 
 	def invalidate(self):
+		if not self.valid():
+			return
 		self.clear()
 	def valid(self):
-		self.c.execute("""SELECT COUNT(*) FROM Probs;""")
+		c = self.conn.cursor()
+		c.execute("""SELECT COUNT(*) FROM Probs;""")
 		self.conn.commit()
-		count = [int(f) for f, in self.c]
+		count = [int(f) for f, in c]
 		return bool(count[0]) if count else False
 	def clear(self):
-		self.c.execute("""DELETE FROM Probs;""")
+		self.conn.execute("""DELETE FROM Probs;""")
 		self._commit()
 	def set_value(self, pname, word, value):
-		self.c.execute("""
-				 INSERT INTO Probs(pool_name, word, value) VALUES (?, ?, ?);
+		self.conn.execute("""
+				 INSERT INTO Probs(pool_name, word, value) VALUES (?, ?, ?)
 				 ON CONFLICT(pool_name, word) DO UPDATE SET
 				 value = excluded.value
 				 ;""", (pname, word, value))
 		self._commit()
 	def getNames(self):
-		self.c.execute("""SELECT DISTINCT pool_name FROM Probs;""")
+		c = self.conn.cursor()
+		c.execute("""SELECT DISTINCT pool_name FROM Probs;""")
 		self.conn.commit()
-		return {f for f, in self.c}
+		return {f for f, in c}
 	def getProbs(self, pname, words):
 		""" extracts the probabilities of tokens in a message
 		"""
-		self.c.execute("""
+		c = self.conn.cursor()
+		c.execute("""
 				SELECT word, value FROM Probs
 				WHERE pool_name = ?
 				AND word IN (""" + ','.join(['?']*len(words)) + """)
-				ORDER BY value DESC
+				ORDER BY value DESC, word DESC
 				LIMIT 2048
 				;""", (pname,) + tuple(words))
 		self.conn.commit()
-		probs = [word, value for word, value in self.c]
+		probs = [(word, value) for word, value in c]
 		return probs
 
 class Pools:
