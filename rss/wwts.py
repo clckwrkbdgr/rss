@@ -8,6 +8,8 @@ import re
 import codecs
 from functools import reduce
 import pickle
+import sqlite3
+from collections import defaultdict
 #import lib.bayes as bayes
 
 ## BAYES START
@@ -48,6 +50,8 @@ class ProbCache:
 			self.dataClass = BayesData
 		else:
 			self.dataClass = dataClass
+	def lock(self): pass
+	def unlock(self): pass
 	def invalidate(self):
 		self.data = None
 	def valid(self):
@@ -67,6 +71,89 @@ class ProbCache:
 		probs.sort(key=lambda x: x[1], reverse=True)
 		return probs[:2048]
 
+class ChainDelegate:
+	class MultiDelegate:
+		def __init__(self, name, instances):
+			self._name = name
+			self._instances = instances
+		def __call__(self, *args, **kwargs):
+			results = []
+			str_results = defaultdict(list)
+			for instance in self._instances:
+				try:
+					result = getattr(instance, self._name)(*args, **kwargs)
+					results.append(result)
+					str_results[str(result)].append(instance)
+				except Exception as e:
+					str_results[str(e)].append(instance)
+			if len(str_results) > 1:
+				print('Results are different: {0}( {1}, {2} )\n\t'.format(self._name, args, kwargs) + '\n\t'.join(list(str_results.keys())))
+			return results[0] if results else None
+	def __init__(self, instances):
+		self._chain = instances
+	def __getattr__(self, name):
+		return self.MultiDelegate(name, self._chain)
+
+class SQLProbCache:
+	def __init__(self, dataClass=None): # FIXME all access should be via transactions
+		filename = os.path.join(app.get_cache_dir(), "prob.sqlite")
+		self.conn = sqlite3.connect(filename, check_same_thread=False) # To allow multithreading access.
+		self.conn.text_factory = str # To prevent some dummy encoding bug.
+		self.c = self.conn.cursor()
+		self.c.execute("""CREATE TABLE IF NOT EXISTS Probs (pool_name TEXT, word TEXT, value REAL);""")
+		self.conn.commit()
+	def __del__(self): # TODO should be done explicitly, e.g. with help of context manager.
+		self.c.close()
+		self.conn.close()
+	def lock(self):
+		if self.in_transaction:
+			return
+		self.in_transaction = True
+	def unlock(self):
+		if not self.in_transaction:
+			return
+		self.in_transaction = False
+		self.conn.commit()
+	def _commit(self):
+		if self.in_transaction:
+			return
+		self.conn.commit()
+
+	def invalidate(self):
+		self.clear()
+	def valid(self):
+		self.c.execute("""SELECT COUNT(*) FROM Probs;""")
+		self.conn.commit()
+		count = [int(f) for f, in self.c]
+		return bool(count[0]) if count else False
+	def clear(self):
+		self.c.execute("""DELETE FROM Probs;""")
+		self._commit()
+	def set_value(self, pname, word, value):
+		self.c.execute("""
+				 INSERT INTO Probs(pool_name, word, value) VALUES (?, ?, ?);
+				 ON CONFLICT(pool_name, word) DO UPDATE SET
+				 value = excluded.value
+				 ;""", (pname, word, value))
+		self._commit()
+	def getNames(self):
+		self.c.execute("""SELECT DISTINCT pool_name FROM Probs;""")
+		self.conn.commit()
+		return {f for f, in self.c}
+	def getProbs(self, pname, words):
+		""" extracts the probabilities of tokens in a message
+		"""
+		self.c.execute("""
+				SELECT word, value FROM Probs
+				WHERE pool_name = ?
+				AND word IN (""" + ','.join(['?']*len(words)) + """)
+				ORDER BY value DESC
+				LIMIT 2048
+				;""", (pname,) + tuple(words))
+		self.conn.commit()
+		probs = [word, value for word, value in self.c]
+		return probs
+
 class Pools:
 	def __init__(self, store_dir, dataClass=None):
 		if dataClass is None:
@@ -77,7 +164,10 @@ class Pools:
 		self.pools = {}
 		self.corpus = self.dataClass('__Corpus__')
 		self.pools['__Corpus__'] = self.corpus
-		self.cache = ProbCache(dataClass=self.dataClass)
+		self.cache = ChainDelegate([
+			ProbCache(dataClass=self.dataClass),
+			SQLProbCache(dataClass=self.dataClass),
+			])
 	def get_pool_tokenCount(self, name):
 		return self.pools.get(name).tokenCount
 	def iter_pool_corpus_words(self, pname):
@@ -155,7 +245,11 @@ class Pools:
 		fp = open(os.path.join(self.store_dir, fname), 'rb')
 		self.pools = pickle.load(fp)
 		fp.close()
-		self.cache.invalidate() # FIXME not needed when cache is loaded from DB.
+		# Should invalidate cache in general case,
+		# but let's hope it's called just once for a Bayes object,
+		# so cache validity will be addressed later anyway:
+		# re-create for pickle-based cache, re-use for SQL-based cache.
+		#self.cache.invalidate()
 	def poolNames(self):
 		"""Return a sorted list of Pool names.
 		Does not include the system pool '__Corpus__'.
@@ -171,6 +265,7 @@ class Pools:
 		"""
 		if self.cache.valid():
 			return
+		self.cache.lock()
 		self.cache.clear()
 		for pname in self.poolNames():
 			poolCount = self.get_pool_tokenCount(pname)
@@ -189,6 +284,7 @@ class Pools:
 				if abs(f-0.5) >= 0.1 :
 					# GOOD_PROB, BAD_PROB
 					self.cache.set_value(pname, word, max(0.0001, min(0.9999, f)))
+		self.cache.unlock()
 	def guessProbs(self, tokens, combiner):
 		self._buildCache()
 		res = {}
