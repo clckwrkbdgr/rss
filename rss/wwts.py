@@ -38,10 +38,6 @@ class BayesData(dict):
 
 	def __init__(self, name=''):
 		self.name = name
-		self.training = []
-		self.pool = None
-		self.tokenCount = 0
-		self.trainCount = 0
 
 class ProbCache:
 	def __init__(self, dataClass=None):
@@ -179,7 +175,8 @@ class Pools:
 		self.pools['__Corpus__'] = self.corpus
 		self.cache = SQLProbCache(dataClass=self.dataClass)
 	def get_pool_tokenCount(self, name):
-		return self.pools.get(name).tokenCount
+		pool = self.pools.get(name)
+		return sum(pool.values())
 	def iter_pool_corpus_words(self, pname):
 		for word, totCount in self.pools['__Corpus__'].items():
 			# for every word in the copus
@@ -200,22 +197,9 @@ class Pools:
 				del(pool[token])
 			else:
 				pool[token] =  count - 1
-			self.adjust_token_count(pool_name, -1)
 		self.cache.invalidate()
 	def has_pool(self, name):
 		return name in self.pools
-	def add_training(self, pool_name):
-		self.pools[pool_name].trainCount += 1
-		self.cache.invalidate()
-	def adjust_token_count(self, pool_name, wc):
-		self.pools[pool_name].tokenCount += wc
-		self.cache.invalidate()
-	def add_trained_uid(self, pool_name, uid):
-		self.pools[pool_name].training.append(uid)
-		self.cache.invalidate()
-	def remove_trained_uid(self, pool_name, uid):
-		self.pools[pool_name].training.remove(uid)
-		self.cache.invalidate()
 
 	def newPool(self, poolName):
 		"""Create a new pool, without actually doing any
@@ -245,7 +229,6 @@ class Pools:
 				dp[tok] += count
 			else:
 				dp[tok] = count
-				dp.tokenCount += 1
 		self.cache.invalidate()
 	def save(self, fname='train.pkl'):
 		fp = open(os.path.join(self.store_dir, fname), 'wb')
@@ -368,7 +351,7 @@ class Bayes(object):
 		"""
 		return self._tokenizer.tokenize(obj)
 
-	def train(self, pool_name, item, uid=None):
+	def train(self, pool_name, item):
 		"""Train Bayes by telling him that item belongs
 		in pool. uid is optional and may be used to uniquely
 		identify the item that is being trained on.
@@ -376,21 +359,12 @@ class Bayes(object):
 		tokens = self.getTokens(item)
 		self.pools.newPool(pool_name)
 		self._train(tokens, pool_name)
-		self.pools.add_training('__Corpus__')
-		self.pools.add_training(pool_name)
-		if uid:
-			self.pools.add_trained_uid(pool_name, uid)
 
-	def untrain(self, pool_name, item, uid=None):
+	def untrain(self, pool_name, item):
 		tokens = self.getTokens(item)
 		if not self.pools.has_pool(pool_name):
 			return
 		self._untrain(tokens, pool_name)
-		# I guess we want to count this as additional training?
-		self.pools.add_training('__Corpus__')
-		self.pools.add_training(pool_name)
-		if uid:
-			self.pools.remove_trained_uid(pool_name, uid)
 
 	def _train(self, tokens, pool_name):
 		wc = 0
@@ -398,8 +372,6 @@ class Bayes(object):
 			self.pools.pool_inc_token(pool_name, token)
 			self.pools.pool_inc_token('__Corpus__', token)
 			wc += 1
-		self.pools.adjust_token_count(pool_name, wc)
-		self.pools.adjust_token_count('__Corpus__', wc)
 
 	def _untrain(self, tokens, pool_name):
 		for token in tokens:
