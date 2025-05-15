@@ -270,7 +270,11 @@ def parse_text(text, url, attempts_left=3):
 			title = get_title(item)
 			title = title.strip() or title
 			Log.debug('Fetched item: {0}'.format(repr(title)))
-			yield get_guid(item), title, get_date(item), get_link(item), get_content(item)
+			guid = get_guid(item)
+			if guid is None:
+				log('{0}: no guid element, skipping: {1}'.format(url, item))
+				continue
+			yield guid, title, get_date(item), get_link(item), get_content(item)
 	except UnicodeEncodeError as e:
 		log('{0}: unicode: {1}'.format(url, e))
 	except xml.etree.ElementTree.ParseError as e:
