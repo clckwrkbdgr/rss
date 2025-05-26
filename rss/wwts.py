@@ -864,6 +864,7 @@ def wwts_guess():
 	args = parser.parse_args()
 
 	args.guess = True
+	args.convert = False
 	return main(args)
 
 def wwts_train():
@@ -881,6 +882,7 @@ def wwts_train():
 		print("No filenames provided!")
 		return 1
 	args.train = True
+	args.convert = False
 	dirname = tag.replace('good', 'other').replace('bad', 'unwanted')
 	#if [ "x$TAG" == "xgood" ]; then
 	if 0 == main(args):
