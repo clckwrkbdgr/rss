@@ -564,7 +564,7 @@ class Bayes(object):
 			self.dataClass = BayesData
 		else:
 			self.dataClass = dataClass
-		self.pools = Pools(self.config.TRAIN_ROOT_DIR, dataClass=dataClass)
+		self.pools = SQLPools(self.config.TRAIN_ROOT_DIR, dataClass=dataClass)
 		# The tokenizer takes an object and returns
 		# a list of strings
 		if tokenizer is None:
