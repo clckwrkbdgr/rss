@@ -248,7 +248,7 @@ class SQLPools:
 	def pool_inc_token(self, pool_name, token):
 		self.conn.execute("""
 				 INSERT INTO Tokens(pool_id, token, count)
-				 VALUES ( (SELECT id FROM Pools WHERE name = ?), ?, 0)
+				 VALUES ( (SELECT id FROM Pools WHERE name = ?), ?, 1)
 				 ON CONFLICT(pool_id, token) DO UPDATE SET
 				 count = count + 1
 				 ;""", (pool_name, token))
@@ -277,6 +277,8 @@ class SQLPools:
 		"""Create a new pool, without actually doing any
 		training.
 		"""
+		if has_pool(poolName):
+			return
 		self.conn.execute("""
 				 INSERT INTO Pools(name) VALUES (?)
 				 ;""", (poolName,))
@@ -402,6 +404,9 @@ class SQLPools:
 				else:
 					goodMetric = min(1.0, otherCount/poolCount)
 				badMetric = min(1.0, thisCount/themCount)
+				if (goodMetric + badMetric) == 0:
+					Log.error('Pool token has zero count: {0}: {1}'.format(pname, (word, totCount, thisCount)))
+					continue
 				f = badMetric / (goodMetric + badMetric)
 
 				# PROBABILITY_THRESHOLD
