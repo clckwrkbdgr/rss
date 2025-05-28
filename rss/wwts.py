@@ -277,7 +277,7 @@ class SQLPools:
 		"""Create a new pool, without actually doing any
 		training.
 		"""
-		if has_pool(poolName):
+		if self.has_pool(poolName):
 			return
 		self.conn.execute("""
 				 INSERT INTO Pools(name) VALUES (?)
