@@ -761,6 +761,26 @@ def stdout_traceline(line):
 	sys.stdout.write(line)
 	sys.stdout.write('\r')
 
+def read_file(filename):
+	with codecs.open(filename, 'r', encoding='utf-8') as content:
+		text = content.read()
+	_, ext = os.path.splitext(filename)
+	if ext == '.html':
+		# Clean HTML doc from non-user-content tags,
+		# and extract only text content.
+		import bs4
+		soup = bs4.BeautifulSoup(text, "lxml")
+		drop_tags = [
+				'script', 'noscript',
+				]
+		for tag in drop_tags:
+			for element in soup.find_all(tag):
+				element.extract()
+		for element in soup.find_all('div', style='display:none'):
+			element.extract()
+		return soup.text
+	return text
+
 def run_wwts(args):
 	config = app.Config(
 			TRAIN_ROOT_DIR=args.train_dir,
@@ -823,26 +843,23 @@ def run_wwts(args):
 		for f in args.file:
 			if os.path.isdir(f):
 				continue
-			with codecs.open(f, 'r', encoding='utf-8') as content:
-				wwts.train(args.tag, content.read())
-				wwts.save()
-				print("Trained {0}".format(f))
+			wwts.train(args.tag, read_file(f))
+			wwts.save()
+			print("Trained {0}".format(f))
 	elif args.untrain:
 		if not args.tag:
 			parser.error('argument -T/--tag is required.')
 		for f in args.file:
 			if os.path.isdir(f):
 				continue
-			with codecs.open(f, 'r', encoding='utf-8') as content:
-				wwts.untrain(args.tag, content.read())
-				wwts.save()
-				print("Untrained {0}".format(f))
+			wwts.untrain(args.tag, read_file(f))
+			wwts.save()
+			print("Untrained {0}".format(f))
 	elif args.guess:
 		for f in args.file:
 			if os.path.isdir(f):
 				continue
-			with codecs.open(f, 'r', encoding='utf-8') as content:
-				print(str(wwts.guess(content.read())) + " " + f)
+			print(str(wwts.guess(read_file(f))) + " " + f)
 	else:
 		parser.error('argument -t/--train or -g/--guess is required')
 
