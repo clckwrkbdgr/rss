@@ -166,7 +166,7 @@ class SQLProbCache:
 class SQLPools:
 	def __init__(self, store_dir, dataClass=None):
 		self.dataClass = dataClass
-		self.store_dir = app.get_cache_dir() # TODO temp. during debugging. Should be: `store_dir`
+		self.store_dir = store_dir
 
 		self.in_transaction = False
 		self.conn = None
