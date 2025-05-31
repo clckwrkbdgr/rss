@@ -257,8 +257,8 @@ def parse_text(text, url, attempts_left=3):
 			text = text.replace(b'\x92', b"'")
 		if attempts_left == 0:
 			pass #text = text.replace(b'\xfc', b'u') # Quickfix for incorrect encoding.
-		Log.debug('Loaded raw data: {0}'.format(textwrap.shorten(repr(text), width=100)))
-		root = ET.fromstring(text)
+		Log.debug('Loaded raw data: {0}'.format(textwrap.shorten(repr(text[:120]), width=100)))
+		root = ET.fromstring(text) # FIXME replace with SAX, mind about reversed() below.
 		if root.tag not in ['rss', '{http://www.w3.org/2005/Atom}feed']:
 			log('{0} at {1} instead of <rss> or <feed>'.format(root.tag, url))
 			return
@@ -275,6 +275,8 @@ def parse_text(text, url, attempts_left=3):
 				log('{0}: no guid element, skipping: {1}'.format(url, item))
 				continue
 			yield guid, title, get_date(item), get_link(item), get_content(item)
+		del text # To force garbage collection.
+		del root # To force garbage collection.
 	except UnicodeEncodeError as e:
 		log('{0}: unicode: {1}'.format(url, e))
 	except xml.etree.ElementTree.ParseError as e:
@@ -402,8 +404,7 @@ def init_logger(logger, filename, debug=False):
 			datefmt='%Y-%m-%d %H:%M:%S',
 			))
 		logger.addHandler(stream_handler)
-
-	if filename:
+	elif filename:
 		file_handler = logging.FileHandler(str(filename), delay=True, encoding='utf-8')
 		file_handler.setFormatter(logging.Formatter(
 			'%(asctime)s:%(name)s:%(levelname)s: %(message)s',
@@ -504,12 +505,13 @@ def main(groups, debug=False, test=None,
 			jobs[job_key].append((pull_feed, (config, group, url, db, use_bayes)))
 
 	tracemalloc.start()
+	Log.debug('Initial memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
 	def _worker(job_key, job_group):
 		Log.debug('Running jobs for {0}'.format(job_key))
 		for job, args in job_group:
 			Log.debug('Running job: {0}'.format(args))
 			job(*args)
-			Log.debug('Memory usage: maxrss={0} alloc={1} @ {2}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory(), url))
+			Log.debug('Memory usage: maxrss={0} alloc={1} @ {2}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory(), args))
 		gc.collect()
 	if threads:
 		with multiprocessing.pool.ThreadPool(processes=threads) as pool:
