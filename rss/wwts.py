@@ -171,8 +171,6 @@ class SQLPools:
 		self.in_transaction = False
 		self.conn = None
 		self.cache = SQLProbCache(dataClass=self.dataClass)
-
-		self.load()
 	def __del__(self): # TODO should be done explicitly, e.g. with help of context manager.
 		self.conn.close()
 	def lock(self):

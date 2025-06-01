@@ -333,7 +333,17 @@ def make_filename(path, title, text):
 
 pull_feed_lock = threading.Lock()
 
-def pull_feed(config, group, url, db, bayes):
+def pull_feed(config, group, url, db, use_bayes):
+	if use_bayes:
+		Log.debug('Opening Bayes from dir: {0}'.format(config.TRAIN_ROOT_DIR))
+		bayes = wwts.Bayes(config, tokenizer=wwts.Tokenizer(lower=True))
+		try:
+			bayes.load()
+			Log.debug('Loaded bayes data.')
+		except Exception as e:
+			log('bayes: {0}'.format(e))
+	else:
+		bayes = None
 	for guid, title, date, link, content in parse_feed(url):
 		with pull_feed_lock:
 			if db.guid_exists(url, guid):
@@ -477,13 +487,6 @@ def main(groups, debug=False, test=None,
 
 	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
 	db = guids.GuidDatabase(config.GUID_FILE)
-	Log.debug('Opening Bayes from dir: {0}'.format(config.TRAIN_ROOT_DIR))
-	bayes = wwts.Bayes(config, tokenizer=wwts.Tokenizer(lower=True))
-	try:
-		bayes.load()
-		Log.debug('Loaded bayes data.')
-	except Exception as e:
-		log('bayes: {0}'.format(e))
 
 	jobs = defaultdict(list)
 	for group in groups:
@@ -491,7 +494,7 @@ def main(groups, debug=False, test=None,
 		for url in rsslinks[group]:
 			Log.debug('Processing URL: {0}'.format(url))
 
-			use_bayes = bayes
+			use_bayes = True
 			if url.startswith('+'):
 				Log.debug('  Bayes is switched off.')
 				url = url.lstrip('+')
