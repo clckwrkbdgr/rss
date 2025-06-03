@@ -333,7 +333,10 @@ def make_filename(path, title, text):
 
 pull_feed_lock = threading.Lock()
 
-def pull_feed(config, group, url, db, use_bayes):
+def pull_feed(config, group, url, use_bayes):
+	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
+	db = guids.GuidDatabase(config.GUID_FILE)
+
 	if use_bayes:
 		Log.debug('Opening Bayes from dir: {0}'.format(config.TRAIN_ROOT_DIR))
 		bayes = wwts.Bayes(config, tokenizer=wwts.Tokenizer(lower=True))
@@ -392,6 +395,7 @@ def pull_feed(config, group, url, db, use_bayes):
 		Log.debug('Remembering GUID: {0}'.format(guid))
 		with pull_feed_lock:
 			db.add_guid(url, guid)
+	db.close()
 
 import click
 
@@ -485,9 +489,6 @@ def main(groups, debug=False, test=None,
 		groups = [group for group in groups if group in available_groups]
 		log("Will load following groups: {0}".format(' '.join(groups)))
 
-	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
-	db = guids.GuidDatabase(config.GUID_FILE)
-
 	jobs = defaultdict(list)
 	for group in groups:
 		Log.debug('Processing group: {0}'.format(group))
@@ -505,7 +506,7 @@ def main(groups, debug=False, test=None,
 				job_key = url
 			else:
 				job_key = parts.netloc
-			jobs[job_key].append((pull_feed, (config, group, url, db, use_bayes)))
+			jobs[job_key].append((pull_feed, (config, group, url, use_bayes)))
 
 	tracemalloc.start()
 	Log.debug('Initial memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
@@ -524,8 +525,6 @@ def main(groups, debug=False, test=None,
 			_worker(*data)
 	Log.debug('Final memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
 	tracemalloc.stop()
-
-	db.close()
 
 if __name__ == "__main__":
 	main()
