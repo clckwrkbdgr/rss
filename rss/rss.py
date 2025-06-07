@@ -6,7 +6,8 @@ import os
 import os.path
 import logging
 import sys
-import socket, threading, multiprocessing.pool, signal
+import socket, signal
+import threading, multiprocessing, multiprocessing.pool
 import difflib
 import urllib.request, urllib.parse
 import re
@@ -331,8 +332,6 @@ def make_filename(path, title, text):
 		filename += '_'
 	return os.path.join(path, filename + '.html')
 
-pull_feed_lock = threading.Lock()
-
 def pull_feed(config, group, url, use_bayes):
 	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
 	db = guids.GuidDatabase(config.GUID_FILE)
@@ -348,7 +347,7 @@ def pull_feed(config, group, url, use_bayes):
 	else:
 		bayes = None
 	for guid, title, date, link, content in parse_feed(url):
-		with pull_feed_lock:
+		with pull_feed.lock:
 			if db.guid_exists(url, guid):
 				Log.debug('GUID already exists, skipping.')
 				continue
@@ -385,7 +384,7 @@ def pull_feed(config, group, url, use_bayes):
 		if 'twitter.com' in url or 'twitter-rss.com' in url:
 			parts = url.split('/');
 			title = url[-1] + '_' + title
-		with pull_feed_lock:
+		with pull_feed.lock:
 			filename = make_filename(savedir, title, content)
 			Log.debug('Saving as: {0}'.format(filename))
 			if not os.path.exists(os.path.dirname(filename)):
@@ -393,9 +392,10 @@ def pull_feed(config, group, url, use_bayes):
 		with open(filename, 'w') as f:
 			f.write(text)
 		Log.debug('Remembering GUID: {0}'.format(guid))
-		with pull_feed_lock:
+		with pull_feed.lock:
 			db.add_guid(url, guid)
 	db.close()
+pull_feed.lock = threading.Lock()
 
 import click
 
@@ -428,6 +428,14 @@ def init_logger(logger, filename, debug=False):
 
 	logger.setLevel(level)
 
+def job_worker(job_key, job_group):
+	Log.debug('Running jobs for {0}'.format(job_key))
+	for job, args in job_group:
+		Log.debug('Running job: {0}'.format(args))
+		job(*args)
+		Log.debug('Memory usage: maxrss={0} alloc={1} @ {2}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory(), args))
+	gc.collect()
+
 @click.command()
 @click.option('--debug', is_flag=True, help='Print debug traces.')
 @click.option('--test', help='Test single feed (URL or local path) and exit.')
@@ -435,11 +443,12 @@ def init_logger(logger, filename, debug=False):
 @click.option('--dest-dir', help='Directory to store downloaded feeds. Default is {0}.'.format(app.Config.RSS_DIR))
 @click.option('--config-file', help='File with feed definitions. Default is {0}.'.format(app.Config.RSS_INI_FILE))
 @click.option('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
-@click.option('--threads', type=int, default=4, help='Enables fetching feeds in parallel threads with specified number of thread pool workers (default is 4). Set to 0 to disable thread pool.')
+@click.option('--threads', type=int, default=multiprocessing.cpu_count(), help='Enables fetching feeds in parallel threads/processes with specified number of job pool workers (default is equal to CPU number). Set to 0 to disable job pool.')
+@click.option('--multiprocessing', 'use_multiprocessing', is_flag=True, help='Use multiprocessing instead of threads (default is threads).')
 @click.argument('groups', nargs=-1)
 def main(groups, debug=False, test=None,
 	guid_file=None, dest_dir=None, config_file=None, train_dir=None,
-		 threads=4,
+		 threads=0, use_multiprocessing=False,
 	):
 	""" Fetches given groups of feeds defined in RSS config file,
 	parses and stores posts in dest. directory.
@@ -510,16 +519,12 @@ def main(groups, debug=False, test=None,
 
 	tracemalloc.start()
 	Log.debug('Initial memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
-	def _worker(job_key, job_group):
-		Log.debug('Running jobs for {0}'.format(job_key))
-		for job, args in job_group:
-			Log.debug('Running job: {0}'.format(args))
-			job(*args)
-			Log.debug('Memory usage: maxrss={0} alloc={1} @ {2}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory(), args))
-		gc.collect()
 	if threads:
-		with multiprocessing.pool.ThreadPool(processes=threads) as pool:
-			list(pool.starmap(_worker, jobs.items()))
+		if use_multiprocessing:
+			pull_feed.lock = multiprocessing.Lock()
+		Pool = multiprocessing.Pool if use_multiprocessing else multiprocessing.pool.ThreadPool
+		with Pool(processes=threads) as pool:
+			list(pool.starmap(job_worker, jobs.items()))
 	else:
 		for data in jobs.items():
 			_worker(*data)
