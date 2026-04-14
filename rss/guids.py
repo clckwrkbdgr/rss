@@ -7,12 +7,16 @@ from . import app
 def _now():
 	return datetime.datetime.strftime(datetime.datetime.now(), "%Y%m%dT%H%M%S%f")
 
+def parse_datetime(value):
+	return datetime.datetime.strptime(value, "%Y%m%dT%H%M%S%f")
+
 class GuidDatabase:
 	def __init__(self, filename):
 		self.conn = sqlite3.connect(filename, check_same_thread=False) # To allow multithreading access.
 		self.conn.text_factory = str # To prevent some dummy encoding bug.
 		self.c = self.conn.cursor()
-		self.c.execute("""create table if not exists Guids (feed text, guid text, datetime text);""")
+		self.c.execute("""create table if not exists Feeds (feed text primary key, last_fetch text);""")
+		self.c.execute("""create table if not exists Guids (feed text, guid text, datetime text);""") # TODO set foreign key for Feeds<-Guids on "feed"
 		self.conn.commit()
 	
 	def close(self):
@@ -22,6 +26,27 @@ class GuidDatabase:
 	def add_guid(self, feed, guid):
 		self.c.execute("""insert into Guids values (?, ?, ?);""", (feed, guid, _now()))
 		self.conn.commit()
+
+	def mark_fetched(self, feed):
+		self.c.execute("""\
+				 insert into Feeds (feed, last_fetch)
+				 values (?, ?)
+				 on conflict(feed)
+				 do update set last_fetch = excluded.last_fetch;
+				 """, (feed, _now()))
+		self.conn.commit()
+	
+	def get_last_fetch(self, feed):
+		self.c.execute("""select last_fetch from Feeds where feed=?;""", (feed,))
+		self.conn.commit()
+		result = [parse_datetime(f) for f, in self.c]
+		return result[0] if result else datetime.datetime.min
+	
+	def get_last_guid(self, feed):
+		self.c.execute("""select max(datetime) from Guids where feed=? and datetime is not null;""", (feed,))
+		self.conn.commit()
+		result = [(parse_datetime(f) if f else None) for f, in self.c]
+		return result[0] if result else datetime.datetime.min
 	
 	def guid_exists(self, feed, guid):
 		self.c.execute("""select count(*) from Guids where feed=? and guid=?;""", (feed, guid))

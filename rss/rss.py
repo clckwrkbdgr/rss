@@ -1,4 +1,4 @@
-#!/usr/bin/python3.3
+#!/usr/bin/env python3
 import bs4
 import xml.etree.ElementTree as ET
 import xml.parsers.expat
@@ -346,6 +346,12 @@ def pull_feed(config, group, url, use_bayes):
 			log('bayes: {0}'.format(e))
 	else:
 		bayes = None
+	try:
+		with pull_feed.lock:
+			Log.debug("Last fetch: {0}, last guid: {1} - for {2}".format(db.get_last_fetch(url), db.get_last_guid(url), url))
+			db.mark_fetched(url)
+	except Exception as e:
+		Log.exception('Exception {1} during marking feed as fetched: {0}'.format(url, e))
 	for guid, title, date, link, content in parse_feed(url):
 		with pull_feed.lock:
 			if db.guid_exists(url, guid):
@@ -527,7 +533,7 @@ def main(groups, debug=False, test=None,
 			list(pool.starmap(job_worker, jobs.items()))
 	else:
 		for data in jobs.items():
-			_worker(*data)
+			job_worker(*data)
 	Log.debug('Final memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
 	tracemalloc.stop()
 
