@@ -21,7 +21,7 @@ import resource, tracemalloc, gc
 from collections import defaultdict
 from . import guids
 from . import wwts
-from . import app
+from . import app, subs
 Log = logging.getLogger('rss')
 log = Log.warning
 
@@ -74,22 +74,6 @@ def check_network():
 
 def isonow():
 	return datetime.datetime.now().isoformat(' ')
-
-def load_ini(file_name):
-	result = {}
-	with open(file_name) as f:
-		current_group = ''
-		for line in f.readlines():
-			line = line.strip()
-			if line.startswith('#') or not line:
-				continue
-			if line.startswith('['):
-				group = line.lstrip('[').rstrip(']')
-				result[group] = []
-				continue
-			if group:
-				result[group].append(line)
-	return result
 
 def fetch_items(root, url=None):
 	items = []
@@ -488,40 +472,12 @@ def main(groups, debug=False, test=None,
 		return
 
 	Log.debug('Loading config file: {0}'.format(config.RSS_INI_FILE))
-	rsslinks = load_ini(config.RSS_INI_FILE)
-	Log.debug('Loaded {0} groups.'.format(len(rsslinks)))
-	available_groups = rsslinks.keys()
-	if not groups:
-		Log.info('Groups were not specified. Fetching everything.')
-		groups = available_groups
-	has_incorrect_groups = False
-	for group in groups:
-		if group not in available_groups:
-			log("Group '{0}' is not available in links!".format(group))
-			has_incorrect_groups = True
-	if has_incorrect_groups:
-		log("Available groups: {0}".format(', '.join(["'{0}'".format(group) for group in available_groups])))
-		groups = [group for group in groups if group in available_groups]
-		log("Will load following groups: {0}".format(' '.join(groups)))
+	rsslinks = subs.Subscriptions()
+	rsslinks.load(config.RSS_INI_FILE)
 
 	jobs = defaultdict(list)
-	for group in groups:
-		Log.debug('Processing group: {0}'.format(group))
-		for url in rsslinks[group]:
-			Log.debug('Processing URL: {0}'.format(url))
-
-			use_bayes = True
-			if url.startswith('+'):
-				Log.debug('  Bayes is switched off.')
-				url = url.lstrip('+')
-				use_bayes = None
-
-			parts = urllib.parse.urlparse(url)
-			if parts.scheme == 'file':
-				job_key = url
-			else:
-				job_key = parts.netloc
-			jobs[job_key].append((pull_feed, (config, group, url, use_bayes)))
+	for sub in rsslinks.iter(groups):
+		jobs[sub.get_mp_key()].append((pull_feed, (config, sub.base, sub.url, sub.use_bayes)))
 
 	tracemalloc.start()
 	Log.debug('Initial memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
