@@ -316,7 +316,8 @@ def make_filename(path, title, text):
 		filename += '_'
 	return os.path.join(path, filename + '.html')
 
-def pull_feed(config, group, url, use_bayes):
+def pull_feed(config, subscription):
+	groups, url, use_bayes = subscription.base, subscription.url, subscription.use_bayes
 	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
 	db = guids.GuidDatabase(config.GUID_FILE)
 
@@ -349,6 +350,11 @@ def pull_feed(config, group, url, use_bayes):
 				continue
 
 		savedir = config.RSS_DIR
+		try:
+			dir_name = list(groups)[0]
+		except Exception as e:
+			Log.error("Failed to get dir name from groups: {0}: {1}".format(groups, e))
+			dir_name = 'good'
 		if bayes is not None:
 			Log.debug('Guessing Bayes tag...')
 			text_to_guess = content if content is not None else ""
@@ -363,11 +369,11 @@ def pull_feed(config, group, url, use_bayes):
 				savedir = os.path.join(savedir, 'unwanted')
 				Log.debug('  Bad. Saving to: {0}'.format(savedir))
 			else:
-				savedir = os.path.join(savedir, group)
+				savedir = os.path.join(savedir, dir_name)
 				Log.debug('  Good. Saving to: {0}'.format(savedir))
 		else:
 			Log.debug('  Bayes is off. Assuming as always good.')
-			savedir = os.path.join(savedir, group)
+			savedir = os.path.join(savedir, dir_name)
 			Log.debug('  Saving to: {0}'.format(savedir))
 
 		text = make_text(title, date, link, content)
@@ -477,7 +483,7 @@ def main(groups, debug=False, test=None,
 
 	jobs = defaultdict(list)
 	for sub in rsslinks.iter(groups):
-		jobs[sub.get_mp_key()].append((pull_feed, (config, sub.base, sub.url, sub.use_bayes)))
+		jobs[sub.get_mp_key()].append((pull_feed, (config, sub)))
 
 	tracemalloc.start()
 	Log.debug('Initial memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
