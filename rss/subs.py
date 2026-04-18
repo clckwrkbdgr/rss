@@ -6,23 +6,51 @@ import yaml
 
 class Subscription:
 	KNOWN_FIELDS = set('url base use_bayes enabled'.split())
+	_KNOWN_FIELDS_MAP = {
+			'url': 'url',
+			'use_bayes' : '_use_bayes',
+			'enabled' : '_enabled',
+			}
 
-	def __init__(self, key, url, base=None, use_bayes=True, enabled=True):
+	def __init__(self, key, url):
 		Log.debug('Initializing subscription for URL: {0}'.format(url))
 		self.key = key
 		self.url = url
-		self.base = set(base) if base else set()
-		self.use_bayes = use_bayes
-		self.enabled = enabled
+		self.base = []
+		self._use_bayes = None
+		self._enabled = None
+	@property
+	def use_bayes(self):
+		if self._use_bayes is None:
+			return True
+		return self._use_bayes
+	@property
+	def enabled(self):
+		if self._enabled is None:
+			return True
+		return self._enabled
+	def set_field(self, name, value):
+		mapped_name = self._KNOWN_FIELDS_MAP.get(name)
+		if not mapped_name:
+			raise RuntimeError('Unknown or unmodifiable Subscription field: {0}'.format(name))
+		setattr(self, mapped_name, value)
 	def __str__(self):
 		return 'Subscription({0}={1})'.format(self.key, repr(self.url))
 	def __repr__(self):
 		return 'Subscription({0}={1}, {2})'.format(
 				self.key, repr(self.url), ', '.join([
-				'base={0}'.format(self.base),
+				'base=[{0}]'.format(','.join(self.base)),
 				'use_bayes={0}'.format(self.use_bayes),
 				'enabled={0}'.format(self.enabled),
 					  ]))
+	def add_base(self, base_def):
+		if base_def.url:
+			raise RuntimeError("Cannot base subscription on another subscription with filled URL ({0}.url = {1})".format(base_def.key, base_def.url))
+		self.base.append(base_def.key)
+		if base_def._use_bayes is not None:
+			self._use_bayes = base_def._use_bayes
+		if base_def._enabled is not None:
+			self._enabled = base_def._enabled
 	def get_mp_key(self):
 		""" Key string value to group subscriptions by their
 		network location (host), to prevent parallel simultaneous
@@ -66,12 +94,22 @@ class Subscriptions:
 			if definition:
 				for field in set(definition.keys()) - Subscription.KNOWN_FIELDS:
 					Log.error("{0}: {1}: unknown field: {2}".format(filename, key, field))
+				if 'base' in definition:
+					base_definitions = definition['base']
+					for base in base_definitions:
+						base_def = self.subs.get(base)
+						if not base_def:
+							Log.error("{0}: {1}: Unknown base definition: {2}. Ignoring entry".format(filename, key, base))
+							return False
+					sub.add_base(base_def)
 				for field in Subscription.KNOWN_FIELDS:
+					if field == 'base':
+						continue # Already processed above (in sub.add_base).
 					if field not in definition:
 						continue
-					setattr(sub, field, definition[field])
+					sub.set_field(field, definition[field])
 			if key in self.subs:
-				Log.error("{0}: {1}: Duplicated subscription, ignoring redundant entry...".format(filename, key))
+				Log.error("{0}: {1}: Duplicated subscription, ignoring redundant entry.".format(filename, key))
 			else:
 				self.subs[key] = sub
 				return True
@@ -94,16 +132,16 @@ class Subscriptions:
 				if group:
 					Log.debug('    Line: {0}'.format(line))
 					url = line
-					use_bayes = True
+					use_bayes = None
 					if url.startswith('+'):
 						Log.debug('      Bayes is switched off.')
 						url = url.lstrip('+')
-						use_bayes = None
+						use_bayes = False
 
 					key = '{0}_{1}'.format(group, url)
 					if self._load_single_sub(file_name, key, {
 						'url' : url,
-						'base' : {group},
+						'base' : [group],
 						'use_bayes' : use_bayes,
 						}):
 						loaded_items += 1
@@ -116,8 +154,8 @@ class Subscriptions:
 			if sub.url is None:
 				continue
 			Log.debug('Processing subscription: {0}'.format(sub))
-			available_groups |= sub.base
-			if groups and not (sub.base & groups):
+			available_groups |= set(sub.base)
+			if groups and not (set(sub.base) & groups):
 				Log.debug('  {0}: does not match groups: {1}'.format(sub.base, groups))
 				continue
 			if not sub.enabled:
