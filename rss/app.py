@@ -19,6 +19,7 @@ def get_cache_dir():
 class Config:
 	GUID_FILE = os.path.join(get_cache_dir(), "guids.sqlite")
 	RSS_INI_FILE = os.path.join(get_data_dir(), 'rss.ini')
+	SUBSCRIPTIONS_FILE = os.path.join(get_data_dir(), 'subscriptions.yml')
 	RSS_DIR = os.path.join(os.path.expanduser("~"), 'RSS')
 	TRAIN_ROOT_DIR = get_data_dir()
 

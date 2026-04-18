@@ -437,13 +437,14 @@ def job_worker(job_key, job_group):
 @click.option('--test', help='Test single feed (URL or local path) and exit.')
 @click.option('--guid-file', help='GUID file. Default is {0}.'.format(app.Config.GUID_FILE))
 @click.option('--dest-dir', help='Directory to store downloaded feeds. Default is {0}.'.format(app.Config.RSS_DIR))
-@click.option('--config-file', help='File with feed definitions. Default is {0}.'.format(app.Config.RSS_INI_FILE))
+@click.option('--subscriptions-file', help='File with subscriptions. Default is {0}.'.format(app.Config.SUBSCRIPTIONS_FILE))
+@click.option('--config-file', help='Legacy file with feed definitions. Default is {0}.'.format(app.Config.RSS_INI_FILE))
 @click.option('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
 @click.option('--threads', type=int, default=multiprocessing.cpu_count(), help='Enables fetching feeds in parallel threads/processes with specified number of job pool workers (default is equal to CPU number). Set to 0 to disable job pool.')
 @click.option('--multiprocessing', 'use_multiprocessing', is_flag=True, help='Use multiprocessing instead of threads (default is threads).')
 @click.argument('groups', nargs=-1)
 def main(groups, debug=False, test=None,
-	guid_file=None, dest_dir=None, config_file=None, train_dir=None,
+	guid_file=None, dest_dir=None, config_file=None, subscriptions_file=None, train_dir=None,
 		 threads=0, use_multiprocessing=False,
 	):
 	""" Fetches given groups of feeds defined in RSS config file,
@@ -455,12 +456,14 @@ def main(groups, debug=False, test=None,
 	init_logger('rss', get_log_file() if test is None else None, debug=debug)
 	Log.debug('GUID file: {0}'.format(guid_file))
 	Log.debug('RSS dir: {0}'.format(dest_dir))
-	Log.debug('INI file: {0}'.format(config_file))
+	Log.debug('Legacy INI file: {0}'.format(config_file))
+	Log.debug('Subscriptions file: {0}'.format(subscriptions_file))
 	Log.debug('WWTS train dir: {0}'.format(train_dir))
 	config = app.Config(
 		GUID_FILE=guid_file,
 		RSS_DIR=dest_dir,
 		RSS_INI_FILE=config_file,
+		SUBSCRIPTIONS_FILE=subscriptions_file,
 		TRAIN_ROOT_DIR=train_dir,
 		)
 
@@ -477,9 +480,9 @@ def main(groups, debug=False, test=None,
 		log("Network is down")
 		return
 
-	Log.debug('Loading config file: {0}'.format(config.RSS_INI_FILE))
+	Log.debug('Loading config files: {0}, {1}'.format(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE))
 	rsslinks = subs.Subscriptions()
-	rsslinks.load(config.RSS_INI_FILE)
+	rsslinks.load(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE)
 
 	jobs = defaultdict(list)
 	for sub in rsslinks.iter(groups):
