@@ -1,15 +1,100 @@
 from pathlib import Path
-import logging
 import urllib.parse
+import datetime
+from enum import Enum
+import logging
 Log = logging.getLogger('rss')
 import yaml
 
+class TimeUnit(Enum):
+	MINUTE = 1
+	HOUR = 2
+	DAY = 3
+	WEEK = 4
+	MONTH = 5
+	@classmethod
+	def from_string(cls, value):
+		return cls(cls._DEF.index(value.lower()) + 1)
+TimeUnit._DEF = 'minute hour day week month'.split()
+
+def parse_time(time_string):
+	try:
+		return datetime.datetime.strptime(time_string, '%H:%M').time()
+	except Exception as e:
+		raise RuntimeError('Failed to parse time string {0}: {1}'.format(repr(time_string), e))
+
+class FetchTime:
+	DEFAULT = None
+	KNOWN_FIELDS = set('each unit from to'.split())
+	_KNOWN_FIELDS_MAP = {
+			'each': '_each',
+			'unit' : '_unit',
+			'from' : '_from',
+			'to' : '_to',
+			}
+	_KNOWN_FIELDS_TYPE_MAP = {
+			'each': int,
+			'unit' : TimeUnit.from_string,
+			'from' : parse_time,
+			'to' : parse_time,
+			}
+	def __init__(self, data):
+		self._each = None
+		self._unit = None
+		self._from = None
+		self._to = None
+
+		for field in set(data.keys()) - self.KNOWN_FIELDS:
+			raise RuntimeError("Unknown FetchTime field: {0}".format(field))
+		for name in self.KNOWN_FIELDS:
+			if name not in data:
+				continue
+			mapped_name = self._KNOWN_FIELDS_MAP.get(name)
+			if not mapped_name:
+				raise RuntimeError('Unknown or unmodifiable FetchTime field: {0}'.format(name))
+			value = data[name]
+			mapped_type = self._KNOWN_FIELDS_TYPE_MAP.get(name, lambda _:_)
+			try:
+				setattr(self, mapped_name, mapped_type(value))
+			except Exception as e:
+				raise RuntimeError('Failed to parse FetchTime field {0} ({1}): {2}'.format(repr(name), data, e))
+		if self._each is None:
+			raise RuntimeError('Missing required field FetchTime.each.')
+		if self._unit is None:
+			raise RuntimeError('Missing required field FetchTime.unit.')
+		if self._from is not None and self._to is None:
+			raise RuntimeError('Missing required field FetchTime.to when .from is defined.')
+		if self._from is None and self._to is not None:
+			raise RuntimeError('Missing required field FetchTime.from when .to is defined.')
+	def __str__(self):
+		if not self._from:
+			return '<each {0} {1}>'.format(self._each, self._unit.name.lower())
+		return '<each {0} {1}, {2}..{3}>'.format(
+			self._each, self._unit.name.lower(), self._from, self._to,
+			)
+	def __repr__(self):
+		return 'FetchTime(each={0}, unit={1}, from={2}, to={3})'.format(
+				repr(self._each),
+				repr(self._unit),
+				repr(self._from),
+				repr(self._to),
+				)
+
+FetchTime.DEFAULT = FetchTime({'each': 1, 'unit': 'hour'})
+
 class Subscription:
-	KNOWN_FIELDS = set('url base use_bayes enabled'.split())
+	KNOWN_FIELDS = set('url base use_bayes enabled time'.split())
 	_KNOWN_FIELDS_MAP = {
 			'url': 'url',
 			'use_bayes' : '_use_bayes',
 			'enabled' : '_enabled',
+			'time' : '_time',
+			}
+	_KNOWN_FIELDS_TYPE_MAP = {
+			'url': str,
+			'use_bayes' : bool,
+			'enabled' : bool,
+			'time' : FetchTime,
 			}
 
 	def __init__(self, key, url):
@@ -19,6 +104,7 @@ class Subscription:
 		self.base = []
 		self._use_bayes = None
 		self._enabled = None
+		self._time = None
 	@property
 	def use_bayes(self):
 		if self._use_bayes is None:
@@ -29,11 +115,17 @@ class Subscription:
 		if self._enabled is None:
 			return True
 		return self._enabled
+	@property
+	def time(self):
+		if self._time is None:
+			return FetchTime.DEFAULT
+		return self._time
 	def set_field(self, name, value):
 		mapped_name = self._KNOWN_FIELDS_MAP.get(name)
 		if not mapped_name:
 			raise RuntimeError('Unknown or unmodifiable Subscription field: {0}'.format(name))
-		setattr(self, mapped_name, value)
+		mapped_type = self._KNOWN_FIELDS_TYPE_MAP.get(name, lambda _:_)
+		setattr(self, mapped_name, mapped_type(value))
 	def __str__(self):
 		return 'Subscription({0}={1})'.format(self.key, repr(self.url))
 	def __repr__(self):
@@ -42,6 +134,7 @@ class Subscription:
 				'base=[{0}]'.format(','.join(self.base)),
 				'use_bayes={0}'.format(self.use_bayes),
 				'enabled={0}'.format(self.enabled),
+				'time={0}'.format(self.time),
 					  ]))
 	def add_base(self, base_def):
 		if base_def.url:
@@ -51,6 +144,8 @@ class Subscription:
 			self._use_bayes = base_def._use_bayes
 		if base_def._enabled is not None:
 			self._enabled = base_def._enabled
+		if base_def._time is not None:
+			self._time = base_def._time
 	def get_mp_key(self):
 		""" Key string value to group subscriptions by their
 		network location (host), to prevent parallel simultaneous
@@ -96,6 +191,8 @@ class Subscriptions:
 					Log.error("{0}: {1}: unknown field: {2}".format(filename, key, field))
 				if 'base' in definition:
 					base_definitions = definition['base']
+					if isinstance(base_definitions, str):
+						base_definitions = [base_definitions]
 					for base in base_definitions:
 						base_def = self.subs.get(base)
 						if not base_def:
@@ -162,6 +259,7 @@ class Subscriptions:
 				Log.debug('  Disabled.')
 				continue
 			Log.debug('  Ready to fetch.')
+			#print(groups, repr(sub))
 			yield sub
 		for incorrect_group in groups - available_groups:
 			Log.warning("Group '{0}' is not available in links!".format(incorrect_group))
