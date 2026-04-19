@@ -479,14 +479,18 @@ def main(groups, debug=False, test=None,
 	if not check_network():
 		log("Network is down")
 		return
+	if groups:
+		Log.warning('Specifying groups to fetch ({0}) on CLI is deprecated! Subscriptions should rely on fetch time definitions.'.format(groups))
 
 	Log.debug('Loading config files: {0}, {1}'.format(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE))
 	rsslinks = subs.Subscriptions()
 	rsslinks.load(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE)
 
+	db = guids.GuidDatabase(config.GUID_FILE) # TODO not protected by pull_feed.lock
 	jobs = defaultdict(list)
-	for sub in rsslinks.iter(groups):
+	for sub in rsslinks.iter(db):
 		jobs[sub.get_mp_key()].append((pull_feed, (config, sub)))
+	db.close()
 
 	tracemalloc.start()
 	Log.debug('Initial memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))

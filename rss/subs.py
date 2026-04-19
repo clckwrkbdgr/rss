@@ -66,6 +66,8 @@ class FetchTime:
 			raise RuntimeError('Missing required field FetchTime.to when .from is defined.')
 		if self._from is None and self._to is not None:
 			raise RuntimeError('Missing required field FetchTime.from when .to is defined.')
+		if self._from and self._to and self._from >= self._to:
+			raise RuntimeError('FetchTime.from should be less than FetchTime.to: {0} > {1}'.format(self._from, self._to))
 	def __str__(self):
 		if not self._from:
 			return '<each {0} {1}>'.format(self._each, self._unit.name.lower())
@@ -79,6 +81,25 @@ class FetchTime:
 				repr(self._from),
 				repr(self._to),
 				)
+	def get_next(self, last_fetch):
+		if self._unit == TimeUnit.MINUTE:
+			shift = datetime.timedelta(minutes=self._each)
+		elif self._unit == TimeUnit.HOUR:
+			shift = datetime.timedelta(hours=self._each)
+		elif self._unit == TimeUnit.DAY:
+			shift = datetime.timedelta(days=self._each)
+		elif self._unit == TimeUnit.WEEK:
+			shift = datetime.timedelta(weeks=self._each)
+		elif self._unit == TimeUnit.MONTH:
+			shift = datetime.timedelta(days=30*self._each)
+		next_fetch = last_fetch + shift
+		if self._from and self._to:
+			if not (self._from <= next_fetch.time() <= self._to):
+				return datetime.datetime.combine(
+						next_fetch.date(),
+						self._from,
+						)
+		return next_fetch
 
 FetchTime.DEFAULT = FetchTime({'each': 1, 'unit': 'hour'})
 
@@ -243,23 +264,30 @@ class Subscriptions:
 						}):
 						loaded_items += 1
 		Log.debug('Loaded {0} subscriptions.'.format(loaded_items))
-	def iter(self, groups=None):
-		groups = set(groups) if groups else set()
-		Log.debug('Group filter: {0}'.format(groups))
-		available_groups = set()
+	def iter(self, guid_db):
+		now = datetime.datetime.now()
 		for sub in self.subs.values():
 			if sub.url is None:
 				continue
 			Log.debug('Processing subscription: {0}'.format(sub))
-			available_groups |= set(sub.base)
-			if groups and not (set(sub.base) & groups):
-				Log.debug('  {0}: does not match groups: {1}'.format(sub.base, groups))
-				continue
 			if not sub.enabled:
 				Log.debug('  Disabled.')
 				continue
+
+			Log.debug('  Fetch time: {0}'.format(sub.time))
+			last_fetch = guid_db.get_last_fetch(sub.url)
+			Log.debug('  Last fetch: {0}'.format(last_fetch))
+			next_fetch = sub.time.get_next(last_fetch)
+			Log.debug('  Next expected fetch: {0}'.format(next_fetch))
+			Log.debug('  Now: {0}'.format(now))
+
+			shift = next_fetch - last_fetch
+			if last_fetch + 2 * shift < now:
+				Log.warning('{0}: Feed was not fetched when expected: {1}, now is: {2}'.format(sub, next_fetch, now))
+
+			if now < next_fetch:
+				Log.debug('  Not yet ready.')
+				continue
+
 			Log.debug('  Ready to fetch.')
-			#print(groups, repr(sub))
 			yield sub
-		for incorrect_group in groups - available_groups:
-			Log.warning("Group '{0}' is not available in links!".format(incorrect_group))
