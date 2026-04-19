@@ -23,6 +23,11 @@ def parse_time(time_string):
 	except Exception as e:
 		raise RuntimeError('Failed to parse time string {0}: {1}'.format(repr(time_string), e))
 
+def bool_or_none(value):
+	if value is None:
+		return None
+	return bool(value)
+
 class FetchTime:
 	DEFAULT = None
 	KNOWN_FIELDS = set('each unit from to'.split())
@@ -113,7 +118,7 @@ class Subscription:
 			}
 	_KNOWN_FIELDS_TYPE_MAP = {
 			'url': str,
-			'use_bayes' : bool,
+			'use_bayes' : bool_or_none,
 			'enabled' : bool,
 			'time' : FetchTime,
 			}
