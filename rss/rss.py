@@ -390,6 +390,12 @@ def pull_feed(config, subscription):
 		Log.debug('Remembering GUID: {0}'.format(guid))
 		with pull_feed.lock:
 			db.add_guid(url, guid)
+	with pull_feed.lock:
+		last_guid_time = db.get_last_guid(url)
+		if last_guid_time is None:
+			Log.warning("{0}: No last new post is detected.".format(url))
+		elif datetime.datetime.now() - last_guid_time > datetime.timedelta(days=subscription.warn_if_outdated_for_days):
+			Log.warning("{0}: Last new post was fetched more than {2} days ago ({1})".format(url, last_guid_time, subscription.warn_if_outdated_for_days))
 	db.close()
 pull_feed.lock = threading.Lock()
 

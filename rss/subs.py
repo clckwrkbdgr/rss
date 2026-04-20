@@ -109,18 +109,20 @@ class FetchTime:
 FetchTime.DEFAULT = FetchTime({'each': 1, 'unit': 'hour'})
 
 class Subscription:
-	KNOWN_FIELDS = set('url base use_bayes enabled time'.split())
+	KNOWN_FIELDS = set('url base use_bayes enabled time warn_if_outdated_for_days'.split())
 	_KNOWN_FIELDS_MAP = {
 			'url': 'url',
 			'use_bayes' : '_use_bayes',
 			'enabled' : '_enabled',
 			'time' : '_time',
+			'warn_if_outdated_for_days' : '_warn_if_outdated_for_days',
 			}
 	_KNOWN_FIELDS_TYPE_MAP = {
 			'url': str,
 			'use_bayes' : bool_or_none,
 			'enabled' : bool,
 			'time' : FetchTime,
+			'warn_if_outdated_for_days' : int,
 			}
 
 	def __init__(self, key, url):
@@ -129,6 +131,7 @@ class Subscription:
 		self.url = url
 		self.base = []
 		self._use_bayes = None
+		self._warn_if_outdated_for_days = None
 		self._enabled = None
 		self._time = None
 	@property
@@ -146,6 +149,11 @@ class Subscription:
 		if self._time is None:
 			return FetchTime.DEFAULT
 		return self._time
+	@property
+	def warn_if_outdated_for_days(self):
+		if self._warn_if_outdated_for_days is None:
+			return 60
+		return self._warn_if_outdated_for_days
 	def set_field(self, name, value):
 		mapped_name = self._KNOWN_FIELDS_MAP.get(name)
 		if not mapped_name:
@@ -161,6 +169,7 @@ class Subscription:
 				'use_bayes={0}'.format(self.use_bayes),
 				'enabled={0}'.format(self.enabled),
 				'time={0}'.format(self.time),
+				'warn_if_outdated_for_days={0}'.format(self.warn_if_outdated_for_days),
 					  ]))
 	def add_base(self, base_def):
 		if base_def.url:
