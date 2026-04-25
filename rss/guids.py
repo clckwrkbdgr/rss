@@ -54,6 +54,28 @@ class GuidDatabase:
 		count = [int(f) for f, in self.c]
 		return count[0] if count else 0
 
+	def get_stats(self, feed):
+		""" Returns tuple (min_interval, avg_interval, max_interval, total_interval).
+		"""
+		self.c.execute("""\
+				select datetime from Guids
+				where feed=? and datetime is not null
+				order by 1
+				;""", (feed,))
+		self.conn.commit()
+		result = [(parse_datetime(f) if f else None) for f, in self.c]
+
+		intervals = [(end - begin) for (begin, end) in zip(result[:-1], result[1:])]
+		too_close = datetime.timedelta(seconds=60) # Should be enough to skip intervals from the same run that are too close together to make significant difference.
+		intervals = [_ for _ in intervals if _ > too_close]
+		if not intervals:
+			return (0, 0, 0, 0)
+		total_interval = (result[-1] - result[0])
+		avg_interval = total_interval / len(intervals)
+		min_interval = min(intervals)
+		max_interval = max(intervals)
+		return (min_interval, avg_interval, max_interval, total_interval)
+
 def clean_guids(config, exclude=None, just_print=False):
 	ENTRIES_TO_KEEP = 150
 	conn = sqlite3.connect(config.GUID_FILE)

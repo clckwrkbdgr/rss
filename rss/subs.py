@@ -86,18 +86,20 @@ class FetchTime:
 				repr(self._from),
 				repr(self._to),
 				)
-	def get_next(self, last_fetch):
+	def get_interval(self):
 		if self._unit == TimeUnit.MINUTE:
-			shift = datetime.timedelta(minutes=self._each)
+			return datetime.timedelta(minutes=self._each)
 		elif self._unit == TimeUnit.HOUR:
-			shift = datetime.timedelta(hours=self._each)
+			return datetime.timedelta(hours=self._each)
 		elif self._unit == TimeUnit.DAY:
-			shift = datetime.timedelta(days=self._each)
+			return datetime.timedelta(days=self._each)
 		elif self._unit == TimeUnit.WEEK:
-			shift = datetime.timedelta(weeks=self._each)
+			return datetime.timedelta(weeks=self._each)
 		elif self._unit == TimeUnit.MONTH:
-			shift = datetime.timedelta(days=30*self._each)
-		next_fetch = last_fetch + shift
+			return datetime.timedelta(days=30*self._each)
+		raise NotImplementedError(self._unit)
+	def get_next(self, last_fetch):
+		next_fetch = last_fetch + self.get_interval()
 		if self._from and self._to:
 			if not (self._from <= next_fetch.time() <= self._to):
 				return datetime.datetime.combine(
@@ -108,14 +110,21 @@ class FetchTime:
 
 FetchTime.DEFAULT = FetchTime({'each': 1, 'unit': 'hour'})
 
+def validate_warn_interval(value):
+	if value not in validate_warn_interval.values:
+		raise RuntimeError('Invalid value for .warn_if_too_frequent_for: {0}. Should be one of: {1}'.format(repr(value), ', '.join(validate_warn_interval.values)))
+	return value
+validate_warn_interval.values = 'not min/2 min avg'.split()
+
 class Subscription:
-	KNOWN_FIELDS = set('url base use_bayes enabled time warn_if_outdated_for_days'.split())
+	KNOWN_FIELDS = set('url base use_bayes enabled time warn_if_outdated_for_days warn_if_too_frequent_for'.split())
 	_KNOWN_FIELDS_MAP = {
 			'url': 'url',
 			'use_bayes' : '_use_bayes',
 			'enabled' : '_enabled',
 			'time' : '_time',
 			'warn_if_outdated_for_days' : '_warn_if_outdated_for_days',
+			'warn_if_too_frequent_for' : '_warn_if_too_frequent_for',
 			}
 	_KNOWN_FIELDS_TYPE_MAP = {
 			'url': str,
@@ -123,6 +132,7 @@ class Subscription:
 			'enabled' : bool,
 			'time' : FetchTime,
 			'warn_if_outdated_for_days' : int,
+			'warn_if_too_frequent_for' : validate_warn_interval,
 			}
 
 	def __init__(self, key, url):
@@ -132,6 +142,7 @@ class Subscription:
 		self.base = []
 		self._use_bayes = None
 		self._warn_if_outdated_for_days = None
+		self._warn_if_too_frequent_for = None
 		self._enabled = None
 		self._time = None
 	@property
@@ -154,6 +165,11 @@ class Subscription:
 		if self._warn_if_outdated_for_days is None:
 			return 60
 		return self._warn_if_outdated_for_days
+	@property
+	def warn_if_too_frequent_for(self):
+		if self._warn_if_too_frequent_for is None:
+			return validate_warn_interval.values[0]
+		return self._warn_if_too_frequent_for
 	def set_field(self, name, value):
 		mapped_name = self._KNOWN_FIELDS_MAP.get(name)
 		if not mapped_name:
@@ -170,6 +186,7 @@ class Subscription:
 				'enabled={0}'.format(self.enabled),
 				'time={0}'.format(self.time),
 				'warn_if_outdated_for_days={0}'.format(self.warn_if_outdated_for_days),
+				'warn_if_too_frequent_for={0}'.format(self.warn_if_too_frequent_for),
 					  ]))
 	def add_base(self, base_def):
 		if base_def.url:
@@ -181,6 +198,8 @@ class Subscription:
 			self._enabled = base_def._enabled
 		if base_def._time is not None:
 			self._time = base_def._time
+		if base_def._warn_if_too_frequent_for is not None:
+			self._warn_if_too_frequent_for = base_def._warn_if_too_frequent_for
 	def get_mp_key(self):
 		""" Key string value to group subscriptions by their
 		network location (host), to prevent parallel simultaneous
@@ -190,6 +209,27 @@ class Subscription:
 		if parts.scheme == 'file':
 			return self.url
 		return parts.netloc
+	def check_intervals(self, feed_stats):
+		""" Checks if defined fetch time is too often
+		for the real intervals from the actual feed.
+		Returns offending interval value (depends on
+		.warn_if_too_frequent_for).
+		See GuidDatabase.get_stats() for details.
+		"""
+		if self.warn_if_too_frequent_for == 'not':
+			return None
+		min_interval, avg_interval, _1, _2 = feed_stats
+		if self.warn_if_too_frequent_for == 'min/2':
+			mark = min_interval / 2
+		elif self.warn_if_too_frequent_for == 'min':
+			mark = min_interval - min_interval / 10
+		elif self.warn_if_too_frequent_for == 'avg':
+			mark = avg_interval
+		else:
+			raise NotImplementedError(self.warn_if_too_frequent_for)
+		if self.time.get_interval() > mark:
+			return None
+		return mark
 
 class Subscriptions:
 	def __init__(self):
@@ -233,7 +273,7 @@ class Subscriptions:
 						if not base_def:
 							Log.error("{0}: {1}: Unknown base definition: {2}. Ignoring entry".format(filename, key, base))
 							return False
-					sub.add_base(base_def)
+						sub.add_base(base_def)
 				for field in Subscription.KNOWN_FIELDS:
 					if field == 'base':
 						continue # Already processed above (in sub.add_base).
