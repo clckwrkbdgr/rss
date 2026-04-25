@@ -69,7 +69,7 @@ class GuidDatabase:
 		too_close = datetime.timedelta(seconds=60) # Should be enough to skip intervals from the same run that are too close together to make significant difference.
 		intervals = [_ for _ in intervals if _ > too_close]
 		if not intervals:
-			return (0, 0, 0, 0)
+			return (datetime.timedelta(), datetime.timedelta(), datetime.timedelta(), datetime.timedelta())
 		total_interval = (result[-1] - result[0])
 		avg_interval = total_interval / len(intervals)
 		min_interval = min(intervals)

@@ -399,7 +399,8 @@ def pull_feed(config, subscription):
 		stats = db.get_stats(url)
 		offended_fetch_time = subscription.check_intervals(stats)
 		if offended_fetch_time:
-			Log.warning("{0}: Defined fetch interval ({1}) is too frequent for the actual feed interval ({2}={3})".format(url, subscription.time, subscription.warn_if_too_frequent_for, offended_fetch_time))
+			min_interval, avg_interval, max_interval, _ = stats
+			Log.warning("{0}: Defined fetch interval ({1}) is too frequent for the actual feed interval ({2}={3}), min={4}, avg={5}, max={6}".format(url, subscription.time, subscription.warn_if_too_frequent_for, offended_fetch_time, min_interval, avg_interval, max_interval))
 	db.close()
 pull_feed.lock = threading.Lock()
 
