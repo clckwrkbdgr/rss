@@ -535,9 +535,32 @@ def main(groups, debug=False, test=None,
 	rsslinks.load(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE)
 
 	db = guids.GuidDatabase(config.GUID_FILE) # TODO not protected by pull_feed.lock
+	defined_feeds = {sub.url for sub in rsslinks.iter_all_feeds()}
+	fetched_feeds = set(db.get_all_feeds())
+	for url in fetched_feeds - defined_feeds:
+		last_fetch = db.get_last_fetch(url)
+		to_delete = False
+		if last_fetch == datetime.datetime.min:
+			Log.warning('{0}: Feed is not defined but fetched, last time is unknown.'.format(url))
+			to_delete = True
+		else:
+			now = datetime.datetime.now()
+			passed = (now - last_fetch)
+			if passed.days > 30:
+				if passed.days > 40:
+					Log.warning('{0}: Feed is not defined but fetched, last time: {1}.'.format(url, last_fetch))
+					to_delete = True
+				elif now.hour == 0 and now.minute == 0: # Lucky guess whether running instance will catch this time; TODO need a stored flag for being warned.
+					Log.warning('{0}: Feed is not defined but fetched, last time: {1}.'.format(url, last_fetch))
+					Log.warning('{0}:   Will be deleted at {1}.'.format(url, last_fetch + datetime.timedelta(days=40)))
+		if to_delete:
+			db.delete_feed(url)
+			Log.warning('{0}:   Dropping all items for the feed from DB.'.format(url))
+
 	jobs = defaultdict(list)
 	for sub in rsslinks.iter(db):
 		jobs[sub.get_mp_key()].append((pull_feed, (config, sub)))
+		fetched_feeds.add(sub.url) # For newly added feeds, which are supposed be fetched at the first run.
 	db.close()
 
 	tracemalloc.start()
@@ -553,6 +576,9 @@ def main(groups, debug=False, test=None,
 			job_worker(*data)
 	Log.debug('Final memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
 	tracemalloc.stop()
+
+	for url in defined_feeds - fetched_feeds:
+		Log.warning('{0}: feed is defined in subscriptions but no items were fetched.'.format(url))
 
 if __name__ == "__main__":
 	main()

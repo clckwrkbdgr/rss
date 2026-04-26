@@ -65,6 +65,23 @@ class GuidDatabase:
 		result = [(str(f) if f else None) for f, in self.c]
 		return result or []
 
+	def get_all_feeds(self):
+		self.c.execute("""\
+				select distinct feed from Guids
+				;""")
+		self.conn.commit()
+		result = [(str(f) if f else None) for f, in self.c]
+		return result or []
+
+	def delete_feed(self, feed):
+		self.c.execute("""\
+				delete from Guids
+				where feed=?
+				;""", (feed,))
+		self.conn.commit()
+		total_deleted = self.c.rowcount
+		return total_deleted
+
 	def delete_items(self, feed, guids):
 		total_deleted = 0
 		while guids:

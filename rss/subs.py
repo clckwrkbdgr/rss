@@ -329,6 +329,11 @@ class Subscriptions:
 						}):
 						loaded_items += 1
 		Log.debug('Loaded {0} subscriptions.'.format(loaded_items))
+	def iter_all_feeds(self):
+		for sub in self.subs.values():
+			if sub.url is None:
+				continue
+			yield sub
 	def iter(self, guid_db):
 		now = datetime.datetime.now()
 		for sub in self.subs.values():
