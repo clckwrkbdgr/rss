@@ -117,7 +117,7 @@ def validate_warn_interval(value):
 validate_warn_interval.values = 'not min/2 min avg'.split()
 
 class Subscription:
-	KNOWN_FIELDS = set('url base use_bayes enabled time warn_if_outdated_for_days warn_if_too_frequent_for'.split())
+	KNOWN_FIELDS = set('url base use_bayes enabled time warn_if_outdated_for_days warn_if_too_frequent_for max_items_to_store'.split())
 	_KNOWN_FIELDS_MAP = {
 			'url': 'url',
 			'use_bayes' : '_use_bayes',
@@ -125,6 +125,7 @@ class Subscription:
 			'time' : '_time',
 			'warn_if_outdated_for_days' : '_warn_if_outdated_for_days',
 			'warn_if_too_frequent_for' : '_warn_if_too_frequent_for',
+			'max_items_to_store' : '_max_items_to_store',
 			}
 	_KNOWN_FIELDS_TYPE_MAP = {
 			'url': str,
@@ -133,6 +134,7 @@ class Subscription:
 			'time' : FetchTime,
 			'warn_if_outdated_for_days' : int,
 			'warn_if_too_frequent_for' : validate_warn_interval,
+			'max_items_to_store' : int,
 			}
 
 	def __init__(self, key, url):
@@ -143,6 +145,7 @@ class Subscription:
 		self._use_bayes = None
 		self._warn_if_outdated_for_days = None
 		self._warn_if_too_frequent_for = None
+		self._max_items_to_store = None
 		self._enabled = None
 		self._time = None
 	@property
@@ -170,6 +173,11 @@ class Subscription:
 		if self._warn_if_too_frequent_for is None:
 			return validate_warn_interval.values[0]
 		return self._warn_if_too_frequent_for
+	@property
+	def max_items_to_store(self):
+		if self._max_items_to_store is None:
+			return 200
+		return self._max_items_to_store
 	def set_field(self, name, value):
 		mapped_name = self._KNOWN_FIELDS_MAP.get(name)
 		if not mapped_name:
@@ -187,6 +195,7 @@ class Subscription:
 				'time={0}'.format(self.time),
 				'warn_if_outdated_for_days={0}'.format(self.warn_if_outdated_for_days),
 				'warn_if_too_frequent_for={0}'.format(self.warn_if_too_frequent_for),
+				'max_items_to_store={0}'.format(self.max_items_to_store),
 					  ]))
 	def add_base(self, base_def):
 		if base_def.url:
@@ -200,6 +209,8 @@ class Subscription:
 			self._time = base_def._time
 		if base_def._warn_if_too_frequent_for is not None:
 			self._warn_if_too_frequent_for = base_def._warn_if_too_frequent_for
+		if base_def._max_items_to_store is not None:
+			self._max_items_to_store = base_def._max_items_to_store
 	def get_mp_key(self):
 		""" Key string value to group subscriptions by their
 		network location (host), to prevent parallel simultaneous

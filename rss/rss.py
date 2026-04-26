@@ -337,7 +337,10 @@ def pull_feed(config, subscription):
 			db.mark_fetched(url)
 	except Exception as e:
 		Log.exception('Exception {1} during marking feed as fetched: {0}'.format(url, e))
+	current_guids = set()
+	new_guids = set()
 	for guid, title, date, link, content in parse_feed(url):
+		current_guids.add(guid)
 		with pull_feed.lock:
 			if db.guid_exists(url, guid):
 				Log.debug('GUID already exists, skipping.')
@@ -390,7 +393,41 @@ def pull_feed(config, subscription):
 		Log.debug('Remembering GUID: {0}'.format(guid))
 		with pull_feed.lock:
 			db.add_guid(url, guid)
+			new_guids.add(guid)
 	with pull_feed.lock:
+		stored_guids = db.get_total_guids(url)
+		if new_guids and stored_guids > len(new_guids):
+			if len(new_guids) == len(current_guids):
+				Log.warning("{0}: All {1} guids were new. Consider making feed fetch time more frequent.".format(
+					url, len(new_guids),
+					))
+			elif len(new_guids) > int(len(current_guids) * 0.9):
+				Log.warning("{0}: Almost all ({1} out of {2}) guids were new. Consider making feed fetch time more frequent.".format(
+					url, len(new_guids), len(current_guids),
+					))
+
+		threshold = subscription.max_items_to_store
+		if current_guids and threshold > 0 and stored_guids > threshold:
+			Log.debug("{0}: Too much guids in DB ({1}>{2})".format(
+				url, stored_guids, threshold,
+				))
+			to_remove = db.get_all_guids(url, except_guids=current_guids)
+			if len(current_guids) >= threshold:
+				Log.warning("{0}: Number of items in feed is more than threshold for storage ({1}>{2})".format(
+					url, len(current_guids), threshold,
+					))
+			else:
+				to_leave = threshold - len(current_guids)
+				to_remove = to_remove[to_leave:]
+			Log.debug("{0}: Current feed keeps {1} items, can remove {2} items.".format(
+				url, len(current_guids), len(to_remove),
+				))
+			if to_remove:
+				removed_items = db.delete_items(url, to_remove)
+				Log.info("{0}: Dropped {1} outdated items.".format(
+					url, removed_items,
+					))
+
 		last_guid_time = db.get_last_guid(url)
 		if last_guid_time is None:
 			Log.warning("{0}: No last new post is detected.".format(url))

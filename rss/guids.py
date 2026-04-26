@@ -42,6 +42,42 @@ class GuidDatabase:
 		result = [parse_datetime(f) for f, in self.c]
 		return result[0] if result else datetime.datetime.min
 	
+	def get_total_guids(self, feed):
+		self.c.execute("""select count(guid) from Guids where feed=?;""", (feed,))
+		self.conn.commit()
+		result = [(int(f) if f else None) for f, in self.c]
+		return result[0] if result else 0
+
+	def get_all_guids(self, feed, except_guids=None):
+		if except_guids:
+			self.c.execute("""\
+					select guid from Guids
+					where feed=?
+					and guid not in ({0})
+					order by datetime desc
+					;""".format(','.join(['?'] * len(except_guids))), (feed,) + tuple(except_guids))
+		else:
+			self.c.execute("""\
+					select guid from Guids where feed=?
+					order by datetime desc
+					;""", (feed,))
+		self.conn.commit()
+		result = [(str(f) if f else None) for f, in self.c]
+		return result or []
+
+	def delete_items(self, feed, guids):
+		total_deleted = 0
+		while guids:
+			batch, guids = guids[:100], guids[100:]
+			self.c.execute("""\
+					delete from Guids
+					where feed=?
+					and guid in ({0})
+					;""".format(','.join(['?'] * len(batch))), (feed,) + tuple(batch))
+			self.conn.commit()
+			total_deleted += self.c.rowcount
+		return total_deleted
+
 	def get_last_guid(self, feed):
 		self.c.execute("""select max(datetime) from Guids where feed=? and datetime is not null;""", (feed,))
 		self.conn.commit()
