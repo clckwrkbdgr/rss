@@ -532,7 +532,9 @@ def main(groups, debug=False, test=None,
 
 	Log.debug('Loading config files: {0}, {1}'.format(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE))
 	rsslinks = subs.Subscriptions()
-	rsslinks.load(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE)
+	if not rsslinks.load(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE):
+		Log.warning('Nothing to fetch.')
+		return
 
 	db = guids.GuidDatabase(config.GUID_FILE) # TODO not protected by pull_feed.lock
 	defined_feeds = {sub.url for sub in rsslinks.iter_all_feeds()}

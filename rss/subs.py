@@ -5,6 +5,22 @@ from enum import Enum
 import logging
 Log = logging.getLogger('rss')
 import yaml
+from yaml.constructor import ConstructorError
+
+def yaml_no_duplicates_constructor(loader, node, deep=False):
+	""" Check for duplicate keys.
+	https://gist.github.com/pypt/94d747fe5180851196eb
+	"""
+	mapping = {}
+	for key_node, value_node in node.value:
+		key = loader.construct_object(key_node, deep=deep)
+		value = loader.construct_object(value_node, deep=deep)
+		if key in mapping:
+			raise ConstructorError("while constructing a mapping", node.start_mark,
+						  "found duplicate key (%s)" % key, key_node.start_mark)
+		mapping[key] = value
+	return loader.construct_mapping(node, deep)
+yaml.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, yaml_no_duplicates_constructor)
 
 class TimeUnit(Enum):
 	MINUTE = 1
@@ -251,24 +267,32 @@ class Subscriptions:
 				Log.warning('Subscription file does not exist, skipping: {0}'.format(file_name))
 				continue
 			if file_name.suffix == '.ini':
-				self.load_ini(file_name)
+				if not self.load_ini(file_name):
+					Log.error('{0}: Failed to load config file.'.format(file_name))
+					return False
 			elif file_name.suffix == '.yml':
-				self.load_yaml(file_name)
+				if not self.load_yaml(file_name):
+					Log.error('{0}: Failed to load config file.'.format(file_name))
+					return False
 			else:
 				Log.error('Unknown type of subscription file: {0}'.format(file_name))
+				return False
+		return True
 	def load_yaml(self, filename):
 		try:
-			data = yaml.safe_load(Path(filename).read_text())
+			data = yaml.full_load(Path(filename).read_text())
 			if not isinstance(data, dict):
 				Log.error("{0}: Subscription file should be a YAML dict, instead got: {1}".format(filename, type(data)))
-				return
+				return False
 			for key, definition in data.items():
 				if definition is not None and not isinstance(data, dict):
 					Log.error("{0}: {1}: Subscription item should be a dict, instead got: {2}".format(filename, key, type(definition)))
 					continue
 				self._load_single_sub(filename, key, definition)
+			return True
 		except Exception as e:
 			Log.error("Failed to load YAML subscription file: {0}: {1}".format(filename, e))
+			return False
 	def _load_single_sub(self, filename, key, definition):
 		try:
 			sub = Subscription(key, None)
@@ -329,6 +353,7 @@ class Subscriptions:
 						}):
 						loaded_items += 1
 		Log.debug('Loaded {0} subscriptions.'.format(loaded_items))
+		return True
 	def iter_all_feeds(self):
 		for sub in self.subs.values():
 			if sub.url is None:
@@ -353,7 +378,8 @@ class Subscriptions:
 
 			shift = next_fetch - last_fetch
 			if last_fetch + 2 * shift < now:
-				Log.warning('{0}: Feed was not fetched when expected: {1}, now is: {2}'.format(sub, next_fetch, now))
+				if guid_db.get_total_guids(sub.url) > 0:
+					Log.warning('{0}: Feed was not fetched when expected: {1}, now is: {2}'.format(sub, next_fetch, now))
 
 			if now < next_fetch:
 				Log.debug('  Not yet ready.')
