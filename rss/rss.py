@@ -539,6 +539,7 @@ def main(groups, debug=False, test=None,
 	db = guids.GuidDatabase(config.GUID_FILE) # TODO not protected by pull_feed.lock
 	defined_feeds = {sub.url for sub in rsslinks.iter_all_feeds()}
 	fetched_feeds = set(db.get_all_feeds())
+	newly_added_feeds = set()
 	for url in fetched_feeds - defined_feeds:
 		last_fetch = db.get_last_fetch(url)
 		to_delete = False
@@ -562,7 +563,14 @@ def main(groups, debug=False, test=None,
 	jobs = defaultdict(list)
 	for sub in rsslinks.iter(db):
 		jobs[sub.get_mp_key()].append((pull_feed, (config, sub)))
-		fetched_feeds.add(sub.url) # For newly added feeds, which are supposed be fetched at the first run.
+		newly_added_feeds.add(sub.url) # For newly added feeds, which are supposed be fetched at the first run.
+
+	for url in defined_feeds - fetched_feeds:
+		total = db.get_total_guids(url)
+		if not total:
+			Log.debug('{0}: No item were fetched before, considering as newly added feed.'.format(url))
+			newly_added_feeds.add(url)
+
 	db.close()
 
 	tracemalloc.start()
@@ -579,7 +587,7 @@ def main(groups, debug=False, test=None,
 	Log.debug('Final memory usage: maxrss={0} alloc={1}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, tracemalloc.get_traced_memory()))
 	tracemalloc.stop()
 
-	for url in defined_feeds - fetched_feeds:
+	for url in (defined_feeds - fetched_feeds) - newly_added_feeds:
 		Log.warning('{0}: feed is defined in subscriptions but no items were fetched.'.format(url))
 
 if __name__ == "__main__":

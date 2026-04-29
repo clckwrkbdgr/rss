@@ -45,7 +45,7 @@ class GuidDatabase:
 	def get_total_guids(self, feed):
 		self.c.execute("""select count(guid) from Guids where feed=?;""", (feed,))
 		self.conn.commit()
-		result = [(int(f) if f else None) for f, in self.c]
+		result = [(int(f) if f else 0) for f, in self.c]
 		return result[0] if result else 0
 
 	def get_all_guids(self, feed, except_guids=None):
