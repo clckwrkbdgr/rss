@@ -12,7 +12,7 @@ import difflib
 import urllib.request, urllib.parse
 import re
 import pprint, textwrap
-import datetime
+import datetime, time
 import http
 import random
 import gzip
@@ -165,25 +165,41 @@ DOCTYPE = b'''
 ]>
 '''.replace(b'\n', b'')
 # Yields: guid, title, date, link, content
-def parse_feed(url, attempts_left=3):
+def parse_feed(subscription):
 	try:
-		text = fetch_url(url, attempts_left=attempts_left)
+		text = fetch_url(subscription)
 		if text is None:
 			return
-		yield from parse_text(text, url)
+		yield from parse_text(text, subscription.url)
 	except KeyboardInterrupt:
-		log('{0}: Feed download interrupted'.format(url))
+		log('{0}: Feed download interrupted'.format(subscription.url))
 	except Exception as e:
-		Log.exception('Unknown exception {1} when parsing feed: {0}'.format(url, e))
+		Log.exception('Unknown exception {1} when parsing feed: {0}'.format(subscription.url, e))
 
-def fetch_url(url, attempts_left=3):
+def _retry_fetch_url(subscription, attempts_left, previous_log, error_message):
+	if attempts_left > 0:
+		Log.debug('Postponing error: {0}'.format(error_message))
+		previous_log = previous_log or []
+		previous_log.append(error_message)
+		Log.debug('Retrying in 1 sec...')
+		time.sleep(1)
+		return fetch_url(subscription, attempts_left=attempts_left-1, previous_log=previous_log)
+	for index, log_message in enumerate(previous_log or []):
+		log(log_message + ' (attempt {0})'.format(index))
+	log(error_message)
+	return None
+
+def fetch_url(subscription, attempts_left=3, previous_log=None):
+	url = subscription.url
+	start_time = time.time()
+	timeout = subscription.timeout or 10
 	try:
 		Log.debug('Requesting...')
 		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
 
-		handle = urllib.request.urlopen(req, timeout=30)
+		handle = urllib.request.urlopen(req, timeout=timeout)
 
-		timer = threading.Timer(60, interrupt_fetch, (url, handle))
+		timer = threading.Timer(timeout + 10, interrupt_fetch, (url, handle))
 		timer.start()
 		text = None
 		try:
@@ -192,31 +208,35 @@ def fetch_url(url, attempts_left=3):
 			timer.cancel()
 		return text
 	except http.client.IncompleteRead as e:
-		if attempts_left > 0:
-			return fetch_url(url, attempts_left - 1)
-		else:
-			log('{0}: incomplete read: {1}'.format(url, e))
+		return _retry_fetch_url(subscription, attempts_left, previous_log,
+				   '{0}: incomplete read: {1}'.format(url, e)
+				   )
 	except http.client.BadStatusLine as e:
 		log('{0}: bad status line: {1}'.format(url, e))
 	except urllib.error.URLError as e:
 		try:
 			e = e.args[0]
 			if isinstance(e, OSError) and e.errno == 110:
-				if attempts_left > 0:
-					return fetch_url(url, attempts_left - 1)
-				else:
-					log('{0}: url: {1}'.format(url, e))
+				return _retry_fetch_url(subscription, attempts_left, previous_log,
+					 '{0}: url: {1}'.format(url, e)
+					 )
 			else:
 				log('{0}: url: {1}'.format(url, e))
 		except:
 			log('{0}: url: {1}'.format(url, e))
+	except TimeoutError as e:
+		time_passed = time.time() - start_time
+		if not subscription.retry_on_timeout:
+			attempts_left = 0
+		return _retry_fetch_url(subscription, attempts_left, previous_log,
+				   '{0}: socket: {1} ({2} seconds)'.format(url, e, time_passed)
+				   )
 	except socket.error as e:
 		try:
 			if e.code == 500:
-				if attempts_left > 0:
-					return fetch_url(url, attempts_left - 1)
-				else:
-					log('{1}: socket({0}): {2}'.format(e.code, url, e))
+				return _retry_fetch_url(subscription, attempts_left, previous_log,
+					 '{1}: socket({0}): {2}'.format(e.code, url, e)
+					 )
 			else:
 				log('{1}: socket({0}): {2}'.format(e.code, url, e))
 		except:
@@ -339,7 +359,7 @@ def pull_feed(config, subscription):
 		Log.exception('Exception {1} during marking feed as fetched: {0}'.format(url, e))
 	current_guids = set()
 	new_guids = set()
-	for guid, title, date, link, content in parse_feed(url):
+	for guid, title, date, link, content in parse_feed(subscription):
 		current_guids.add(guid)
 		with pull_feed.lock:
 			if db.guid_exists(url, guid):
@@ -520,7 +540,8 @@ def main(groups, debug=False, test=None,
 		if os.path.exists(url):
 			url = 'file://' + url
 		Log.debug('Fetching single feed: {0}'.format(url))
-		for item in parse_feed(url):
+		sub = subs.Subscription('test', url)
+		for item in parse_feed(sub):
 			pprint.pprint(item)
 		return
 

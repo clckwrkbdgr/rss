@@ -133,12 +133,14 @@ def validate_warn_interval(value):
 validate_warn_interval.values = 'not min/2 min avg'.split()
 
 class Subscription:
-	KNOWN_FIELDS = set('url base use_bayes enabled time warn_if_outdated_for_days warn_if_too_frequent_for max_items_to_store'.split())
+	KNOWN_FIELDS = set('url base use_bayes enabled time timeout retry_on_timeout warn_if_outdated_for_days warn_if_too_frequent_for max_items_to_store'.split())
 	_KNOWN_FIELDS_MAP = {
 			'url': 'url',
 			'use_bayes' : '_use_bayes',
 			'enabled' : '_enabled',
 			'time' : '_time',
+			'timeout' : '_timeout',
+			'retry_on_timeout' : '_retry_on_timeout',
 			'warn_if_outdated_for_days' : '_warn_if_outdated_for_days',
 			'warn_if_too_frequent_for' : '_warn_if_too_frequent_for',
 			'max_items_to_store' : '_max_items_to_store',
@@ -148,6 +150,8 @@ class Subscription:
 			'use_bayes' : bool_or_none,
 			'enabled' : bool,
 			'time' : FetchTime,
+			'timeout' : int,
+			'retry_on_timeout' : bool,
 			'warn_if_outdated_for_days' : int,
 			'warn_if_too_frequent_for' : validate_warn_interval,
 			'max_items_to_store' : int,
@@ -159,6 +163,8 @@ class Subscription:
 		self.url = url
 		self.base = []
 		self._use_bayes = None
+		self._timeout = None
+		self._retry_on_timeout = None
 		self._warn_if_outdated_for_days = None
 		self._warn_if_too_frequent_for = None
 		self._max_items_to_store = None
@@ -179,6 +185,16 @@ class Subscription:
 		if self._time is None:
 			return FetchTime.DEFAULT
 		return self._time
+	@property
+	def timeout(self):
+		if self._timeout is None:
+			return 30
+		return self._timeout
+	@property
+	def retry_on_timeout(self):
+		if self._retry_on_timeout is None:
+			return 30
+		return self._retry_on_timeout
 	@property
 	def warn_if_outdated_for_days(self):
 		if self._warn_if_outdated_for_days is None:
@@ -209,6 +225,8 @@ class Subscription:
 				'use_bayes={0}'.format(self.use_bayes),
 				'enabled={0}'.format(self.enabled),
 				'time={0}'.format(self.time),
+				'timeout={0}'.format(self.timeout),
+				'retry_on_timeout={0}'.format(self.retry_on_timeout),
 				'warn_if_outdated_for_days={0}'.format(self.warn_if_outdated_for_days),
 				'warn_if_too_frequent_for={0}'.format(self.warn_if_too_frequent_for),
 				'max_items_to_store={0}'.format(self.max_items_to_store),
