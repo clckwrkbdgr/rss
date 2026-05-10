@@ -592,6 +592,7 @@ def main(groups, debug=False, test=None,
 			Log.debug('{0}: No item were fetched before, considering as newly added feed.'.format(url))
 			newly_added_feeds.add(url)
 
+	db.vacuum()
 	db.close()
 
 	tracemalloc.start()

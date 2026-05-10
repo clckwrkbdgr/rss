@@ -23,6 +23,10 @@ class GuidDatabase:
 		self.c.close()
 		self.conn.close()
 	
+	def vacuum(self):
+		self.c.execute("vacuum;")
+		self.conn.commit()
+	
 	def add_guid(self, feed, guid):
 		self.c.execute("""insert into Guids values (?, ?, ?);""", (feed, guid, _now()))
 		self.conn.commit()
