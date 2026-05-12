@@ -174,7 +174,10 @@ def parse_feed(subscription):
 	except KeyboardInterrupt:
 		log('{0}: Feed download interrupted'.format(subscription.url))
 	except Exception as e:
-		Log.exception('Unknown exception {1} when parsing feed: {0}'.format(subscription.url, e))
+		try:
+			Log.exception('Unknown exception {1} when parsing feed: {0}'.format(subscription.url, e))
+		except Exception as _e:
+			Log.error('Unknown exception {1} when handling exception {2}: {0}'.format(subscription.url, _e, e))
 
 def _retry_fetch_url(subscription, attempts_left, previous_log, error_message):
 	if attempts_left > 0:
@@ -199,11 +202,14 @@ def fetch_url(subscription, attempts_left=3, previous_log=None):
 
 		handle = urllib.request.urlopen(req, timeout=timeout)
 
-		timer = threading.Timer(timeout + 10, interrupt_fetch, (url, handle))
+		timer = threading.Timer(timeout + 30, interrupt_fetch, (url, handle))
 		timer.start()
 		text = None
 		try:
 			text = handle.read()
+		except AttributeError as e:
+			log('{0}: interrupted: {1}'.format(url, e))
+			timer.cancel()
 		finally:
 			timer.cancel()
 		return text
