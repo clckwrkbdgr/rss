@@ -561,6 +561,7 @@ def main(groups, debug=False, test=None,
 	rsslinks = subs.Subscriptions()
 	if not rsslinks.load(config.SUBSCRIPTIONS_FILE, config.RSS_INI_FILE):
 		Log.warning('Nothing to fetch.')
+		sys.exit(1)
 		return
 
 	db = guids.GuidDatabase(config.GUID_FILE) # TODO not protected by pull_feed.lock
