@@ -283,7 +283,7 @@ def parse_text(text, url, attempts_left=3):
 			Log.debug('Fetched item: {0}'.format(repr(title)))
 			guid = get_guid(item)
 			if guid is None:
-				log('{0}: no guid element, skipping: {1}'.format(url, item))
+				log('{0}: no guid element, skipping: {1}'.format(url, ET.tostring(item, encoding='utf-8')))
 				continue
 			yield guid, title, get_date(item), get_link(item), get_content(item)
 		del text # To force garbage collection.
