@@ -8,6 +8,8 @@ def _now():
 	return datetime.datetime.strftime(datetime.datetime.now(), "%Y%m%dT%H%M%S%f")
 
 def parse_datetime(value):
+	if value is None:
+		return None
 	return datetime.datetime.strptime(value, "%Y%m%dT%H%M%S%f")
 
 class GuidDatabase:
@@ -44,13 +46,13 @@ class GuidDatabase:
 		self.c.execute("""select max(last_fetch) from Feeds where feed=?;""", (feed,))
 		self.conn.commit()
 		result = [parse_datetime(f) for f, in self.c]
-		return result[0] if result else datetime.datetime.min
+		return result[0] if result and result[0] else datetime.datetime.min
 	
 	def get_last_fetch_hostname(self, hostname):
 		self.c.execute("""select max(last_fetch) from Feeds where feed like '%://' || ? || '/%';""", (hostname,))
 		self.conn.commit()
 		result = [parse_datetime(f) for f, in self.c]
-		return result[0] if result else datetime.datetime.min
+		return result[0] if result and result[0] else datetime.datetime.min
 	
 	def get_total_guids(self, feed):
 		self.c.execute("""select count(guid) from Guids where feed=?;""", (feed,))
@@ -109,7 +111,7 @@ class GuidDatabase:
 		self.c.execute("""select max(datetime) from Guids where feed=? and datetime is not null;""", (feed,))
 		self.conn.commit()
 		result = [(parse_datetime(f) if f else None) for f, in self.c]
-		return result[0] if result else datetime.datetime.min
+		return result[0] if result and result[0] else datetime.datetime.min
 	
 	def guid_exists(self, feed, guid):
 		self.c.execute("""select count(*) from Guids where feed=? and guid=?;""", (feed, guid))
