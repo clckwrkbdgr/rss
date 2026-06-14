@@ -41,7 +41,13 @@ class GuidDatabase:
 		self.conn.commit()
 	
 	def get_last_fetch(self, feed):
-		self.c.execute("""select last_fetch from Feeds where feed=?;""", (feed,))
+		self.c.execute("""select max(last_fetch) from Feeds where feed=?;""", (feed,))
+		self.conn.commit()
+		result = [parse_datetime(f) for f, in self.c]
+		return result[0] if result else datetime.datetime.min
+	
+	def get_last_fetch_hostname(self, hostname):
+		self.c.execute("""select max(last_fetch) from Feeds where feed like '%://' || ? || '/%';""", (hostname,))
 		self.conn.commit()
 		result = [parse_datetime(f) for f, in self.c]
 		return result[0] if result else datetime.datetime.min

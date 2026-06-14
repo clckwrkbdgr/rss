@@ -347,6 +347,19 @@ def pull_feed(config, subscription):
 	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
 	db = guids.GuidDatabase(config.GUID_FILE)
 
+	if subscription.same_host_delay > 0:
+		Log.debug('{0}: same_host_delay={1}'.format(subscription.url, repr(subscription.same_host_delay)))
+		hostname = subscription.get_hostname()
+		with pull_feed.lock:
+			last_fetch = db.get_last_fetch_hostname(hostname)
+			Log.debug('  Last fetch for the host: {0}'.format(last_fetch))
+			now = datetime.datetime.now()
+			Log.debug('  Passed time till now: {0}'.format(now - last_fetch))
+			if now - last_fetch <= datetime.timedelta(seconds=subscription.same_host_delay * 60):
+				Log.debug('  Postponing fetch')
+				db.close()
+				return
+
 	if use_bayes:
 		Log.debug('Opening Bayes from dir: {0}'.format(config.TRAIN_ROOT_DIR))
 		bayes = wwts.Bayes(config, tokenizer=wwts.Tokenizer(lower=True))
