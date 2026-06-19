@@ -529,10 +529,11 @@ def job_worker(job_key, job_group):
 @click.option('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
 @click.option('--threads', type=int, default=multiprocessing.cpu_count(), help='Enables fetching feeds in parallel threads/processes with specified number of job pool workers (default is equal to CPU number). Set to 0 to disable job pool.')
 @click.option('--multiprocessing', 'use_multiprocessing', is_flag=True, help='Use multiprocessing instead of threads (default is threads).')
+@click.option('--no-delete-undefined', 'no_delete_undefined', is_flag=True, help="Prevent deleting subscriptions that are fetched but not defined in subscription file (by default they're deleted after 40 days).")
 @click.argument('groups', nargs=-1)
 def main(groups, debug=False, test=None,
 	guid_file=None, dest_dir=None, config_file=None, subscriptions_file=None, train_dir=None,
-		 threads=0, use_multiprocessing=False,
+		 threads=0, use_multiprocessing=False, no_delete_undefined=False,
 	):
 	""" Fetches given groups of feeds defined in RSS config file,
 	parses and stores posts in dest. directory.
@@ -597,7 +598,7 @@ def main(groups, debug=False, test=None,
 				elif now.hour == 0 and now.minute == 0: # Lucky guess whether running instance will catch this time; TODO need a stored flag for being warned.
 					Log.warning('{0}: Feed is not defined but fetched, last time: {1}.'.format(url, last_fetch))
 					Log.warning('{0}:   Will be deleted at {1}.'.format(url, last_fetch + datetime.timedelta(days=40)))
-		if to_delete:
+		if to_delete and not no_delete_undefined:
 			db.delete_feed(url)
 			Log.warning('{0}:   Dropping all items for the feed from DB.'.format(url))
 
