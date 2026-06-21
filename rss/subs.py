@@ -118,6 +118,8 @@ class FetchTime:
 		next_fetch = last_fetch + self.get_interval()
 		if self._from and self._to:
 			if not (self._from <= next_fetch.time() <= self._to):
+				if next_fetch.date() == last_fetch.date():
+					next_fetch += datetime.timedelta(days=1)
 				return datetime.datetime.combine(
 						next_fetch.date(),
 						self._from,
