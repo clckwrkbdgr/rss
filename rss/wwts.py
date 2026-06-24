@@ -10,6 +10,7 @@ from functools import reduce
 import pickle
 import sqlite3
 from collections import defaultdict
+import threading, multiprocessing
 #import lib.bayes as bayes
 
 ## BAYES START
@@ -92,7 +93,7 @@ class ChainDelegate:
 		return self.MultiDelegate(name, self._chain)
 
 class SQLProbCache:
-	def __init__(self, dataClass=None): # FIXME all access should be via transactions
+	def __init__(self, dataClass=None, lock_model=None): # FIXME all access should be via transactions
 		self.in_transaction = False
 		filename = os.path.join(app.get_cache_dir(), "prob.sqlite")
 		self.conn = sqlite3.connect(filename, timeout=10, check_same_thread=False) # To allow multithreading access.
@@ -106,9 +107,11 @@ class SQLProbCache:
 				)
 				;""")
 		self.conn.commit()
+		self._lock = (lock_model or threading).Lock()
 	def __del__(self): # TODO should be done explicitly, e.g. with help of context manager.
 		self.conn.close()
 	def lock(self):
+		self._lock.acquire(timeout=120)
 		if self.in_transaction:
 			return
 		self.in_transaction = True
@@ -118,6 +121,7 @@ class SQLProbCache:
 			return
 		self.in_transaction = False
 		self.conn.commit()
+		self._lock.release()
 	def _commit(self):
 		if self.in_transaction:
 			return
@@ -164,13 +168,13 @@ class SQLProbCache:
 		return probs
 
 class SQLPools:
-	def __init__(self, store_dir, dataClass=None):
+	def __init__(self, store_dir, dataClass=None, lock_model=None):
 		self.dataClass = dataClass
 		self.store_dir = store_dir
 
 		self.in_transaction = False
 		self.conn = None
-		self.cache = SQLProbCache(dataClass=self.dataClass)
+		self.cache = SQLProbCache(dataClass=self.dataClass, lock_model=lock_model)
 	def __del__(self): # TODO should be done explicitly, e.g. with help of context manager.
 		self.conn.close()
 	def lock(self):
@@ -425,7 +429,7 @@ class SQLPools:
 		return res
 
 class Pools:
-	def __init__(self, store_dir, dataClass=None):
+	def __init__(self, store_dir, dataClass=None, lock_model=None):
 		if dataClass is None:
 			self.dataClass = BayesData
 		else:
@@ -434,7 +438,7 @@ class Pools:
 		self.pools = {}
 		self.corpus = self.dataClass('__Corpus__')
 		self.pools['__Corpus__'] = self.corpus
-		self.cache = SQLProbCache(dataClass=self.dataClass)
+		self.cache = SQLProbCache(dataClass=self.dataClass, lock_model=lock_model)
 	def lock(self): pass
 	def unlock(self): pass
 	def get_pool_tokenCount(self, name):
@@ -561,13 +565,13 @@ class Pools:
 
 class Bayes(object):
 
-	def __init__(self, config, tokenizer=None, combiner=None, dataClass=None):
+	def __init__(self, config, tokenizer=None, combiner=None, dataClass=None, lock_model=None):
 		self.config = config
 		if dataClass is None:
 			self.dataClass = BayesData
 		else:
 			self.dataClass = dataClass
-		self.pools = SQLPools(self.config.TRAIN_ROOT_DIR, dataClass=dataClass)
+		self.pools = SQLPools(self.config.TRAIN_ROOT_DIR, dataClass=dataClass, lock_model=lock_model)
 		# The tokenizer takes an object and returns
 		# a list of strings
 		if tokenizer is None:

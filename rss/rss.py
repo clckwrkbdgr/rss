@@ -362,7 +362,7 @@ def pull_feed(config, subscription):
 
 	if use_bayes:
 		Log.debug('Opening Bayes from dir: {0}'.format(config.TRAIN_ROOT_DIR))
-		bayes = wwts.Bayes(config, tokenizer=wwts.Tokenizer(lower=True))
+		bayes = wwts.Bayes(config, tokenizer=wwts.Tokenizer(lower=True), lock_model=pull_feed.lock_model)
 		try:
 			bayes.load()
 			Log.debug('Loaded bayes data.')
@@ -479,6 +479,7 @@ def pull_feed(config, subscription):
 			Log.warning("{0}: Defined fetch interval ({1}) is too frequent for the actual feed interval ({2}={3}), min={4}, avg={5}, max={6}".format(url, subscription.time, subscription.warn_if_too_frequent_for, offended_fetch_time, min_interval, avg_interval, max_interval))
 	db.close()
 pull_feed.lock = threading.Lock()
+pull_feed.lock_model = threading
 
 import click
 
@@ -621,6 +622,7 @@ def main(groups, debug=False, test=None,
 	if threads:
 		if use_multiprocessing:
 			pull_feed.lock = multiprocessing.Lock()
+			pull_feed.lock_model = multiprocessing
 		Pool = multiprocessing.Pool if use_multiprocessing else multiprocessing.pool.ThreadPool
 		with Pool(processes=threads) as pool:
 			list(pool.starmap(job_worker, jobs.items()))
