@@ -98,7 +98,10 @@ class SQLProbCache:
 		filename = os.path.join(app.get_cache_dir(), "prob.sqlite")
 		self.conn = sqlite3.connect(filename, timeout=10, check_same_thread=False) # To allow multithreading access.
 		self.conn.text_factory = str # To prevent some dummy encoding bug.
-		self.conn.execute("""
+		self._lock = (lock_model or threading).Lock()
+		try:
+			self._lock.acquire(timeout=120)
+			self.conn.execute("""
 				CREATE TABLE IF NOT EXISTS Probs (
 					pool_name TEXT,
 					word TEXT,
@@ -106,10 +109,12 @@ class SQLProbCache:
 					PRIMARY KEY (pool_name, word)
 				)
 				;""")
-		self.conn.commit()
-		self._lock = (lock_model or threading).Lock()
+			self.conn.commit()
+		finally:
+			self._lock.release()
 	def __del__(self): # TODO should be done explicitly, e.g. with help of context manager.
-		self.conn.close()
+		if self.conn:
+			self.conn.close()
 	def lock(self):
 		self._lock.acquire(timeout=120)
 		if self.in_transaction:
