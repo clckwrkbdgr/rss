@@ -11,7 +11,8 @@ import pickle
 import sqlite3
 from collections import defaultdict
 import threading, multiprocessing
-#import lib.bayes as bayes
+import logging
+Log = logging.getLogger('rss')
 
 ## BAYES START
 
@@ -93,14 +94,17 @@ class ChainDelegate:
 		return self.MultiDelegate(name, self._chain)
 
 class SQLProbCache:
+	DB_TIMEOUT = 60 # sec
+
 	def __init__(self, dataClass=None, lock_model=None): # FIXME all access should be via transactions
 		self.in_transaction = False
 		filename = os.path.join(app.get_cache_dir(), "prob.sqlite")
-		self.conn = sqlite3.connect(filename, timeout=10, check_same_thread=False) # To allow multithreading access.
+		self.conn = sqlite3.connect(filename, timeout=self.DB_TIMEOUT, check_same_thread=False) # To allow multithreading access.
 		self.conn.text_factory = str # To prevent some dummy encoding bug.
 		self._lock = (lock_model or threading).Lock()
 		try:
-			self._lock.acquire(timeout=120)
+			if not self._lock.acquire(timeout=self.DB_TIMEOUT):
+				Log.error('SQLProbCache.__init__: Failed to acquire lock.')
 			self.conn.execute("""
 				CREATE TABLE IF NOT EXISTS Probs (
 					pool_name TEXT,
@@ -116,7 +120,8 @@ class SQLProbCache:
 		if self.conn:
 			self.conn.close()
 	def lock(self):
-		self._lock.acquire(timeout=120)
+		if not self._lock.acquire(timeout=self.DB_TIMEOUT):
+			Log.error('SQLProbCache: Failed to acquire lock.')
 		if self.in_transaction:
 			return
 		self.in_transaction = True

@@ -16,7 +16,6 @@ import datetime, time
 import http
 import random
 import gzip
-import logging
 import resource, tracemalloc, gc
 from collections import defaultdict
 from . import guids
