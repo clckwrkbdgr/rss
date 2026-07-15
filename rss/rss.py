@@ -87,7 +87,13 @@ def fetch_items(root, url=None):
 	return items
 
 def get_guid(item):
-	for tagname in ['guid', '{http://www.w3.org/2005/Atom}guid', 'id', '{http://www.w3.org/2005/Atom}id', 'link', '{http://www.w3.org/2005/Atom}link']:
+	guid_tags = [
+			'guid', '{http://www.w3.org/2005/Atom}guid',
+			'id', '{http://www.w3.org/2005/Atom}id',
+			'link', '{http://www.w3.org/2005/Atom}link',
+				'{http://purl.org/dc/elements/1.1/}link',
+			]
+	for tagname in guid_tags:
 		result = item.find(tagname)
 		if result is not None:
 			if result.tag.endswith('link') and 'href' in result.attrib:
