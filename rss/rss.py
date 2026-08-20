@@ -152,12 +152,6 @@ def get_content(item):
 				return result.text
 	return ''
 
-def interrupt_fetch(feed, handle):
-	log('Feed download interrupted: {0}'.format(feed))
-	handle.close()
-	import _thread
-	_thread.interrupt_main()
-
 DOCTYPE = b'''
 <!DOCTYPE naughtyxml [
 	<!ENTITY nbsp "&#0160;">
@@ -197,27 +191,88 @@ def _retry_fetch_url(subscription, attempts_left, previous_log, error_message):
 	log(error_message)
 	return None
 
+def import_module(module_spec):
+	module_filename = None
+	module_name = module_spec
+	if os.path.exists(module_spec):
+		module_filename = module_spec
+		module_name = os.path.basename(os.path.splitext(module_spec)[0])
+		import re
+		module_name = re.sub(r'\W|^(?=\d)','_', module_name)
+	if module_name in sys.modules:
+		return sys.modules[module_name]
+
+	if module_filename:
+		import importlib.util
+		spec = importlib.util.spec_from_file_location(module_name, module_filename)
+		module_instance = importlib.util.module_from_spec(spec)
+		spec.loader.exec_module(module_instance)
+	else:
+		import importlib
+		module_instance = importlib.import_module(module_name)
+	sys.modules[module_name] = module_instance
+	return module_instance
+
+def resolve_entry_point(entry_point_spec):
+	""" Loads function from the module.
+	Spec should have format "file/name.py:function" or "module.name:function".
+	Returns function object.
+	"""
+	try:
+		try:
+			import importlib.metadata as importlib_metadata
+		except ImportError:
+			import importlib_metadata
+		entry_point = importlib_metadata.EntryPoint(name=None, group=None, value=entry_point_spec)
+		from collections import namedtuple
+		entry_point = namedtuple('_EntryPoint', 'module_name attrs')(entry_point.module, tuple([entry_point.attr]))
+		module_spec = import_module(entry_point.module_name)
+		function = getattr(module_spec, entry_point.attrs[0])
+		return function
+	except Exception as e:
+		log('Failed to resolve entry point {0}: {1}'.format(repr(entry_point_spec), e))
+		return None
+
+def interrupt_fetch(url, handle):
+	log('Feed download interrupted: {0}'.format(url))
+	if handle:
+		handle.close()
+	import _thread
+	_thread.interrupt_main() # FIXME interrupt only the current thread.
+
+def read_stream(url, timeout=10):
+	req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
+
+	handle = urllib.request.urlopen(req, timeout=timeout)
+
+	timer = threading.Timer(timeout + 30, interrupt_fetch, (url, handle))
+	timer.start()
+	text = None
+	try:
+		text = handle.read()
+	except AttributeError as e:
+		log('{0}: interrupted: {1}'.format(url, e))
+		timer.cancel()
+	finally:
+		timer.cancel()
+	return text
+
 def fetch_url(subscription, attempts_left=3, previous_log=None):
 	url = subscription.url
 	start_time = time.time()
 	timeout = subscription.timeout or 10
 	try:
 		Log.debug('Requesting...')
-		req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
-
-		handle = urllib.request.urlopen(req, timeout=timeout)
-
-		timer = threading.Timer(timeout + 30, interrupt_fetch, (url, handle))
-		timer.start()
-		text = None
-		try:
-			text = handle.read()
-		except AttributeError as e:
-			log('{0}: interrupted: {1}'.format(url, e))
-			timer.cancel()
-		finally:
-			timer.cancel()
-		return text
+		downloader_spec = subscription.downloader
+		if downloader_spec is None:
+			downloader = read_stream
+		else:
+			downloader = resolve_entry_point(downloader_spec)
+			if not downloader:
+				Log.warning('{0}: Failed to prepare downloader.'.format(subscription.url))
+				return None
+			Log.debug('Resolved downloader {0}: {1}'.format(downloader_spec, downloader))
+		return downloader(url, timeout=timeout)
 	except http.client.IncompleteRead as e:
 		return _retry_fetch_url(subscription, attempts_left, previous_log,
 				   '{0}: incomplete read: {1}'.format(url, e)
@@ -252,6 +307,8 @@ def fetch_url(subscription, attempts_left=3, previous_log=None):
 				log('{1}: socket({0}): {2}'.format(e.code, url, e))
 		except:
 			log('{0}: socket: {1}'.format(url, e))
+	except Exception as e:
+		log('{0}: failed to fetch: {1}'.format(url, e))
 	return None
 
 def parse_text(text, url, attempts_left=3):

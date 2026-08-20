@@ -135,7 +135,7 @@ def validate_warn_interval(value):
 validate_warn_interval.values = 'not min/2 min avg'.split()
 
 class Subscription:
-	KNOWN_FIELDS = set('url base use_bayes enabled time timeout retry_on_timeout warn_if_outdated_for_days warn_if_too_frequent_for max_items_to_store same_host_delay'.split())
+	KNOWN_FIELDS = set('url base use_bayes enabled time timeout retry_on_timeout warn_if_outdated_for_days warn_if_too_frequent_for max_items_to_store same_host_delay downloader'.split())
 	_KNOWN_FIELDS_MAP = {
 			'url': 'url',
 			'use_bayes' : '_use_bayes',
@@ -147,6 +147,7 @@ class Subscription:
 			'warn_if_too_frequent_for' : '_warn_if_too_frequent_for',
 			'max_items_to_store' : '_max_items_to_store',
 			'same_host_delay' : '_same_host_delay',
+			'downloader' : '_downloader',
 			}
 	_KNOWN_FIELDS_TYPE_MAP = {
 			'url': str,
@@ -159,6 +160,7 @@ class Subscription:
 			'warn_if_too_frequent_for' : validate_warn_interval,
 			'max_items_to_store' : int,
 			'same_host_delay' : int,
+			'downloader' : str,
 			}
 
 	def __init__(self, key, url):
@@ -173,6 +175,7 @@ class Subscription:
 		self._warn_if_too_frequent_for = None
 		self._max_items_to_store = None
 		self._same_host_delay = None
+		self._downloader = None
 		self._enabled = None
 		self._time = None
 	@property
@@ -220,6 +223,11 @@ class Subscription:
 		if self._same_host_delay is None:
 			return 0
 		return self._same_host_delay
+	@property
+	def downloader(self):
+		if self._downloader is None:
+			return None
+		return self._downloader
 	def set_field(self, name, value):
 		mapped_name = self._KNOWN_FIELDS_MAP.get(name)
 		if not mapped_name:
@@ -241,6 +249,7 @@ class Subscription:
 				'warn_if_too_frequent_for={0}'.format(self.warn_if_too_frequent_for),
 				'max_items_to_store={0}'.format(self.max_items_to_store),
 				'same_host_delay={0}'.format(self.same_host_delay),
+				'downloader={0}'.format(self.downloader or '<BUILT-IN>'),
 					  ]))
 	def add_base(self, base_def):
 		if base_def.url:
@@ -258,6 +267,8 @@ class Subscription:
 			self._max_items_to_store = base_def._max_items_to_store
 		if base_def._same_host_delay is not None:
 			self._same_host_delay = base_def._same_host_delay
+		if base_def._downloader is not None:
+			self._downloader = base_def._downloader
 	def get_hostname(self):
 		""" Returns hostname for network location or empty string for filesystem location.
 		"""
