@@ -246,8 +246,13 @@ def interrupt_fetch(url, handle):
 	import _thread
 	_thread.interrupt_main() # FIXME interrupt only the current thread.
 
-def read_stream(url, timeout=10):
-	req = urllib.request.Request(url, headers={ 'User-Agent': 'Mozilla/5.0 (Linux)' })
+def read_stream(url, timeout=10, headers=None):
+	default_headers = { 'User-Agent': 'Mozilla/5.0 (Linux)' }
+	if headers:
+		default_headers.update(headers)
+	custom_headers = default_headers
+
+	req = urllib.request.Request(url, headers=custom_headers)
 
 	handle = urllib.request.urlopen(req, timeout=timeout)
 
@@ -262,6 +267,16 @@ def read_stream(url, timeout=10):
 	finally:
 		timer.cancel()
 	return text
+
+def get_cookies(filename, hostname):
+	cookiefile = os.path.expanduser(filename)
+	if not os.path.exists(cookiefile):
+		return {}
+	with open(cookiefile, 'rb') as f:
+		cookies = f.read()
+	host_cookies = [line.split('\t') for line in cookies.decode('utf-8').splitlines()]
+	host_cookies = {line[-2]:line[-1] for line in host_cookies if hostname.endswith(line[0])}
+	return host_cookies
 
 def fetch_url(subscription, attempts_left=3, previous_log=None):
 	url = subscription.url
@@ -278,7 +293,16 @@ def fetch_url(subscription, attempts_left=3, previous_log=None):
 				Log.warning('{0}: Failed to prepare downloader.'.format(subscription.url))
 				return None
 			Log.debug('Resolved downloader {0}: {1}'.format(downloader_spec, downloader))
-		return downloader(url, timeout=timeout)
+		headers = None
+		if subscription.fetch:
+			try:
+				headers = subscription.fetch.headers or {}
+				if subscription.fetch.cookies:
+					cookies = get_cookies(subscription.fetch.cookies, subscription.get_hostname())
+					headers['Cookie'] = '; '.join('{0}={1}'.format(k, v) for k, v in cookies.items())
+			except Exception as e:
+				Log.error('{0}: Failed to prepare fetch headers: {1}'.format(url, e))
+		return downloader(url, timeout=timeout, headers=headers)
 	except http.client.IncompleteRead as e:
 		return _retry_fetch_url(subscription, attempts_left, previous_log,
 				   '{0}: incomplete read: {1}'.format(url, e)

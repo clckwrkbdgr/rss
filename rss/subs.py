@@ -128,6 +128,54 @@ class FetchTime:
 
 FetchTime.DEFAULT = FetchTime({'each': 1, 'unit': 'hour'})
 
+class Fetch:
+	KNOWN_FIELDS = set('headers cookies'.split())
+	_KNOWN_FIELDS_MAP = {
+			'headers': '_headers',
+			'cookies' : '_cookies',
+			}
+	_KNOWN_FIELDS_TYPE_MAP = {
+			'headers': dict,
+			'cookies' : str,
+			}
+	def __init__(self, data):
+		self._headers = None
+		self._cookies = None
+
+		for field in set(data.keys()) - self.KNOWN_FIELDS:
+			raise RuntimeError("Unknown Fetch field: {0}".format(field))
+		for name in self.KNOWN_FIELDS:
+			if name not in data:
+				continue
+			mapped_name = self._KNOWN_FIELDS_MAP.get(name)
+			if not mapped_name:
+				raise RuntimeError('Unknown or unmodifiable Fetch field: {0}'.format(name))
+			value = data[name]
+			mapped_type = self._KNOWN_FIELDS_TYPE_MAP.get(name, lambda _:_)
+			try:
+				setattr(self, mapped_name, mapped_type(value))
+			except Exception as e:
+				raise RuntimeError('Failed to parse Fetch field {0} ({1}): {2}'.format(repr(name), data, e))
+	def __str__(self):
+		return '<{0}..., Cookies={1}>'.format(
+			next(iter((self._headers or {}).keys())), self._cookies,
+			)
+	def __repr__(self):
+		return 'Fetch(headers={0}, cookies={1})'.format(
+				repr(self._headers),
+				repr(self._cookies),
+				)
+	@property
+	def headers(self):
+		if self._headers is None:
+			return None
+		return self._headers
+	@property
+	def cookies(self):
+		if self._cookies is None:
+			return None
+		return self._cookies
+
 def validate_warn_interval(value):
 	if value not in validate_warn_interval.values:
 		raise RuntimeError('Invalid value for .warn_if_too_frequent_for: {0}. Should be one of: {1}'.format(repr(value), ', '.join(validate_warn_interval.values)))
@@ -135,7 +183,7 @@ def validate_warn_interval(value):
 validate_warn_interval.values = 'not min/2 min avg'.split()
 
 class Subscription:
-	KNOWN_FIELDS = set('url base use_bayes enabled time timeout retry_on_timeout warn_if_outdated_for_days warn_if_too_frequent_for max_items_to_store same_host_delay downloader'.split())
+	KNOWN_FIELDS = set('url base use_bayes enabled time timeout retry_on_timeout warn_if_outdated_for_days warn_if_too_frequent_for max_items_to_store same_host_delay downloader fetch'.split())
 	_KNOWN_FIELDS_MAP = {
 			'url': 'url',
 			'use_bayes' : '_use_bayes',
@@ -148,6 +196,7 @@ class Subscription:
 			'max_items_to_store' : '_max_items_to_store',
 			'same_host_delay' : '_same_host_delay',
 			'downloader' : '_downloader',
+			'fetch' : '_fetch',
 			}
 	_KNOWN_FIELDS_TYPE_MAP = {
 			'url': str,
@@ -161,6 +210,7 @@ class Subscription:
 			'max_items_to_store' : int,
 			'same_host_delay' : int,
 			'downloader' : str,
+			'fetch' : Fetch,
 			}
 
 	def __init__(self, key, url):
@@ -176,6 +226,7 @@ class Subscription:
 		self._max_items_to_store = None
 		self._same_host_delay = None
 		self._downloader = None
+		self._fetch = None
 		self._enabled = None
 		self._time = None
 	@property
@@ -228,6 +279,11 @@ class Subscription:
 		if self._downloader is None:
 			return None
 		return self._downloader
+	@property
+	def fetch(self):
+		if self._fetch is None:
+			return None
+		return self._fetch
 	def set_field(self, name, value):
 		mapped_name = self._KNOWN_FIELDS_MAP.get(name)
 		if not mapped_name:
@@ -250,6 +306,7 @@ class Subscription:
 				'max_items_to_store={0}'.format(self.max_items_to_store),
 				'same_host_delay={0}'.format(self.same_host_delay),
 				'downloader={0}'.format(self.downloader or '<BUILT-IN>'),
+				'fetch={0}'.format(self.fetch or '<DEFAULT>'),
 					  ]))
 	def add_base(self, base_def):
 		if base_def.url:
@@ -269,6 +326,8 @@ class Subscription:
 			self._same_host_delay = base_def._same_host_delay
 		if base_def._downloader is not None:
 			self._downloader = base_def._downloader
+		if base_def._fetch is not None:
+			self._fetch = base_def._fetch # TODO update with base_def fields.
 	def get_hostname(self):
 		""" Returns hostname for network location or empty string for filesystem location.
 		"""
