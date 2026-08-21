@@ -194,9 +194,9 @@ def _retry_fetch_url(subscription, attempts_left, previous_log, error_message):
 def import_module(module_spec):
 	module_filename = None
 	module_name = module_spec
-	if os.path.exists(module_spec):
-		module_filename = module_spec
-		module_name = os.path.basename(os.path.splitext(module_spec)[0])
+	if os.path.exists(os.path.expanduser(module_spec)):
+		module_filename = os.path.expanduser(module_spec)
+		module_name = os.path.basename(os.path.splitext(module_filename)[0])
 		import re
 		module_name = re.sub(r'\W|^(?=\d)','_', module_name)
 	if module_name in sys.modules:
@@ -213,6 +213,7 @@ def import_module(module_spec):
 	sys.modules[module_name] = module_instance
 	return module_instance
 
+FILE_ENTRY_POINT = re.compile(r'^([^:]+):(\w+)$')
 def resolve_entry_point(entry_point_spec):
 	""" Loads function from the module.
 	Spec should have format "file/name.py:function" or "module.name:function".
@@ -224,10 +225,15 @@ def resolve_entry_point(entry_point_spec):
 		except ImportError:
 			import importlib_metadata
 		entry_point = importlib_metadata.EntryPoint(name=None, group=None, value=entry_point_spec)
-		from collections import namedtuple
-		entry_point = namedtuple('_EntryPoint', 'module_name attrs')(entry_point.module, tuple([entry_point.attr]))
-		module_spec = import_module(entry_point.module_name)
-		function = getattr(module_spec, entry_point.attrs[0])
+		try:
+			module_spec = entry_point.module
+			function_spec = entry_point.attr
+		except:
+			m = FILE_ENTRY_POINT.match(entry_point_spec)
+			module_spec = m.group(1)
+			function_spec = m.group(2)
+		module_spec = import_module(module_spec)
+		function = getattr(module_spec, function_spec)
 		return function
 	except Exception as e:
 		log('Failed to resolve entry point {0}: {1}'.format(repr(entry_point_spec), e))
