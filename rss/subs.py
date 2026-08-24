@@ -320,6 +320,8 @@ class Subscription:
 			self._time = base_def._time
 		if base_def._warn_if_too_frequent_for is not None:
 			self._warn_if_too_frequent_for = base_def._warn_if_too_frequent_for
+		if base_def._warn_if_outdated_for_days is not None:
+			self._warn_if_outdated_for_days = base_def._warn_if_outdated_for_days
 		if base_def._max_items_to_store is not None:
 			self._max_items_to_store = base_def._max_items_to_store
 		if base_def._same_host_delay is not None:
