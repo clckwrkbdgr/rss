@@ -91,7 +91,6 @@ def get_guid(item):
 			'guid', '{http://www.w3.org/2005/Atom}guid',
 			'id', '{http://www.w3.org/2005/Atom}id',
 			'link', '{http://www.w3.org/2005/Atom}link',
-				'{http://purl.org/dc/elements/1.1/}link',
 			]
 	for tagname in guid_tags:
 		result = item.find(tagname)
@@ -100,8 +99,9 @@ def get_guid(item):
 				return result.attrib['href'].lower()
 			if result.tag.endswith('guid') and 'isPermalink' in result.attrib:
 				return result.text.lower()
-			return result.text
-	return ''
+			if result.text is not None:
+				return result.text
+	return None
 
 def get_title(item):
 	for tagname in ['title', '{http://www.w3.org/2005/Atom}title', 'link', '{http://www.w3.org/2005/Atom}link']:
