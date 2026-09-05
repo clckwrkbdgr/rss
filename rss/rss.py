@@ -243,8 +243,13 @@ def interrupt_fetch(url, handle):
 	log('Feed download interrupted: {0}'.format(url))
 	if handle:
 		handle.close()
-	import _thread
-	_thread.interrupt_main() # FIXME interrupt only the current thread.
+	if multiprocessing.current_process().daemon:
+		log('Stopping current MP worker...')
+		multiprocessing.current_process().terminate()
+	else:
+		log('Stopping current thread...')
+		import _thread
+		_thread.exit()
 
 def read_stream(url, timeout=10, headers=None):
 	default_headers = { 'User-Agent': 'Mozilla/5.0 (Linux)' }
