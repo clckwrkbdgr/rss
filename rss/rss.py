@@ -283,10 +283,11 @@ def get_cookies(filename, hostname):
 	host_cookies = {line[-2]:line[-1] for line in host_cookies if hostname.endswith(line[0])}
 	return host_cookies
 
-def fetch_url(subscription, attempts_left=3, previous_log=None):
+def fetch_url(subscription, attempts_left=None, previous_log=None):
 	url = subscription.url
 	start_time = time.time()
 	timeout = subscription.timeout or 10
+	attempts_left = (subscription.retry_attempts or 3) if attempts_left is None else attempts_left
 	try:
 		Log.debug('Requesting...')
 		downloader_spec = subscription.downloader
@@ -317,7 +318,12 @@ def fetch_url(subscription, attempts_left=3, previous_log=None):
 	except urllib.error.URLError as e:
 		try:
 			e = e.args[0]
+			is_timeout = False
 			if isinstance(e, OSError) and e.errno == 110:
+				is_timeout = True
+			elif 'The handshake operation timed out' in str(e):
+				is_timeout = True
+			if is_timeout:
 				return _retry_fetch_url(subscription, attempts_left, previous_log,
 					 '{0}: url: {1}'.format(url, e)
 					 )
