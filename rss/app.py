@@ -22,9 +22,9 @@ class Config:
 	SUBSCRIPTIONS_FILE = os.path.join(get_data_dir(), 'subscriptions.yml')
 	RSS_DIR = os.path.join(os.path.expanduser("~"), 'RSS')
 	TRAIN_ROOT_DIR = get_data_dir()
+	perftimes_log = None
 
 	def __init__(self, **kwargs):
 		for name, value in kwargs.items():
-			assert getattr(self, name)
 			if value is not None:
 				setattr(self, name, value)

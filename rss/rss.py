@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import xml.parsers.expat
 import os
 import os.path
+from pathlib import Path
 import logging
 import sys
 import socket, signal
@@ -446,6 +447,7 @@ def make_filename(path, title, text):
 	return os.path.join(path, filename + '.html')
 
 def pull_feed(config, subscription):
+	start_time = datetime.datetime.now()
 	groups, url, use_bayes = subscription.base, subscription.url, subscription.use_bayes
 	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
 	db = guids.GuidDatabase(config.GUID_FILE)
@@ -581,6 +583,20 @@ def pull_feed(config, subscription):
 			min_interval, avg_interval, max_interval, _ = stats
 			Log.warning("{0}: Defined fetch interval ({1}) is too frequent for the actual feed interval ({2}={3}), min={4}, avg={5}, max={6}".format(url, subscription.time, subscription.warn_if_too_frequent_for, offended_fetch_time, min_interval, avg_interval, max_interval))
 	db.close()
+
+	stop_time = datetime.datetime.now()
+	try:
+		if config.perftimes_log:
+			with config.perftimes_log.open('a+') as f:
+				f.write("{0} - {1} | {2}\n".format(
+					start_time,
+					stop_time - start_time,
+					'urss::{0}: {1}'.format(subscription.key, subscription.url),
+					))
+	except Exception as e:
+		Log.error('Failed to write perftimes_log ({0}): {1}'.format(
+			config.perftimes_log, e,
+			))
 pull_feed.lock = threading.Lock()
 pull_feed.lock_model = threading
 
@@ -631,12 +647,14 @@ def job_worker(job_key, job_group):
 @click.option('--subscriptions-file', help='File with subscriptions. Default is {0}.'.format(app.Config.SUBSCRIPTIONS_FILE))
 @click.option('--config-file', help='Legacy file with feed definitions. Default is {0}.'.format(app.Config.RSS_INI_FILE))
 @click.option('--train-dir', help='Root directory for WWTS train files. Default is {0}.'.format(app.Config.TRAIN_ROOT_DIR))
+@click.option('--perftimes-log', type=Path, help='File to write performance times for fetching subscriptions.')
 @click.option('--threads', type=int, default=multiprocessing.cpu_count(), help='Enables fetching feeds in parallel threads/processes with specified number of job pool workers (default is equal to CPU number). Set to 0 to disable job pool.')
 @click.option('--multiprocessing', 'use_multiprocessing', is_flag=True, help='Use multiprocessing instead of threads (default is threads).')
 @click.option('--no-delete-undefined', 'no_delete_undefined', is_flag=True, help="Prevent deleting subscriptions that are fetched but not defined in subscription file (by default they're deleted after 40 days).")
 @click.argument('groups', nargs=-1)
 def main(groups, debug=False, test=None,
 	guid_file=None, dest_dir=None, config_file=None, subscriptions_file=None, train_dir=None,
+		 perftimes_log=None,
 		 threads=0, use_multiprocessing=False, no_delete_undefined=False,
 	):
 	""" Fetches given groups of feeds defined in RSS config file,
@@ -657,6 +675,7 @@ def main(groups, debug=False, test=None,
 		RSS_INI_FILE=config_file,
 		SUBSCRIPTIONS_FILE=subscriptions_file,
 		TRAIN_ROOT_DIR=train_dir,
+		perftimes_log=perftimes_log,
 		)
 
 	if test:
