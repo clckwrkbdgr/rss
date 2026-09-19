@@ -28,6 +28,15 @@ class GuidDatabase:
 	def vacuum(self):
 		self.c.execute("vacuum;")
 		self.conn.commit()
+
+	def register_feed(self, feed):
+		self.c.execute("""\
+				 insert into Feeds (feed, last_fetch)
+				 values (?, NULL)
+				 on conflict(feed)
+				 do nothing;
+				 """, (feed,))
+		self.conn.commit()
 	
 	def add_guid(self, feed, guid):
 		self.c.execute("""insert into Guids values (?, ?, ?);""", (feed, guid, _now()))
@@ -35,21 +44,21 @@ class GuidDatabase:
 
 	def mark_fetched(self, feed):
 		self.c.execute("""\
-				 insert into Feeds (feed, last_fetch)
-				 values (?, ?)
-				 on conflict(feed)
-				 do update set last_fetch = excluded.last_fetch;
-				 """, (feed, _now()))
+				 update Feeds
+				 set last_fetch = ?
+				 where feed = ?;
+				 """, (_now(), feed))
 		self.conn.commit()
+		assert self.c.rowcount, "Failed to find registered feed to mark it as fetched: {0}".format(feed)
 	
 	def get_last_fetch(self, feed):
-		self.c.execute("""select max(last_fetch) from Feeds where feed=?;""", (feed,))
+		self.c.execute("""select max(last_fetch) from Feeds where feed=? and last_fetch is not null;""", (feed,))
 		self.conn.commit()
 		result = [parse_datetime(f) for f, in self.c]
 		return result[0] if result and result[0] else datetime.datetime.min
 	
 	def get_last_fetch_hostname(self, hostname):
-		self.c.execute("""select max(last_fetch) from Feeds where feed like '%://' || ? || '/%';""", (hostname,))
+		self.c.execute("""select max(last_fetch) from Feeds where feed like '%://' || ? || '/%' and last_fetch is not null;""", (hostname,))
 		self.conn.commit()
 		result = [parse_datetime(f) for f, in self.c]
 		return result[0] if result and result[0] else datetime.datetime.min
@@ -92,6 +101,11 @@ class GuidDatabase:
 				;""", (feed,))
 		self.conn.commit()
 		total_deleted = self.c.rowcount
+		self.c.execute("""\
+				delete from Feeds
+				where feed=?
+				;""", (feed,))
+		self.conn.commit()
 		return total_deleted
 
 	def delete_items(self, feed, guids):

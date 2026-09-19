@@ -503,6 +503,8 @@ def pull_feed(config, subscription):
 	groups, url, use_bayes = subscription.base, subscription.url, subscription.use_bayes
 	Log.debug('Opening GUID file: {0}'.format(config.GUID_FILE))
 	db = guids.GuidDatabase(config.GUID_FILE)
+	Log.debug('{0}: ensuring feed registration...'.format(subscription.url))
+	db.register_feed(subscription.url)
 
 	if subscription.same_host_delay > 0:
 		Log.debug('{0}: same_host_delay={1}'.format(subscription.url, repr(subscription.same_host_delay)))
