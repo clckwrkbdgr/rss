@@ -19,7 +19,6 @@ setuptools.setup(
 				'wwts = rss.wwts:main',
 				'wwts_guess = rss.wwts:wwts_guess',
 				'wwts_train = rss.wwts:wwts_train',
-				'clean_urss_guids = rss.guids:clean_guids',
 				]
 			},
 		)
