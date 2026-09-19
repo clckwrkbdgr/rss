@@ -111,7 +111,7 @@ class GuidDatabase:
 		self.c.execute("""select max(datetime) from Guids where feed=? and datetime is not null;""", (feed,))
 		self.conn.commit()
 		result = [(parse_datetime(f) if f else None) for f, in self.c]
-		return result[0] if result and result[0] else datetime.datetime.min
+		return result[0] if result and result[0] else None
 	
 	def guid_exists(self, feed, guid):
 		self.c.execute("""select count(*) from Guids where feed=? and guid=?;""", (feed, guid))

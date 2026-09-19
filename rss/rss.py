@@ -6,7 +6,7 @@ import os
 import os.path
 from pathlib import Path
 import logging
-import sys
+import sys, subprocess
 import socket, signal
 import threading, multiprocessing, multiprocessing.pool
 import difflib
@@ -252,6 +252,54 @@ def interrupt_fetch(url, handle):
 		import _thread
 		_thread.exit()
 
+def make_shell_downloader(subscription, shell_command):
+	def _actual(url, timeout=10, headers=None, _subscription=subscription, _shell_command=shell_command):
+		try:
+			if headers:
+				headers = ' '.join(
+					'-H "{0}={1}"'.format(_name, _value)
+					for _name, _value in headers.items()
+					)
+			prepared_command = _shell_command.format(
+					url=url,
+					timeout=timeout,
+					headers=headers or '',
+					)
+			p = subprocess.Popen(prepared_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			stdout, stderr = p.communicate(None)
+			rc = p.wait()
+			if rc != 0:
+				Log.error('{0}: process returned RC={1}: {2}'.format(
+					_subscription.key,
+					rc, prepared_command,
+					))
+				if stdout:
+					Log.error('{0}: stdout: {1}'.format(
+						_subscription.key,
+						stdout,
+						))
+				if stderr:
+					Log.error('{0}: stderr: {1}'.format(
+						_subscription.key,
+						stderr,
+						))
+				return None
+			if stderr:
+				Log.warning('{0}: {1}: {2}'.format(
+					_subscription.key,
+					prepared_command,
+					stderr,
+					))
+			return stdout
+		except Exception as e:
+			Log.error('{0}: {1}: {2}'.format(
+				_subscription.key,
+				prepared_command,
+				e,
+				))
+			return None
+	return _actual
+
 def read_stream(url, timeout=10, headers=None):
 	default_headers = { 'User-Agent': 'Mozilla/5.0 (Linux)' }
 	if headers:
@@ -294,6 +342,10 @@ def fetch_url(subscription, attempts_left=None, previous_log=None):
 		downloader_spec = subscription.downloader
 		if downloader_spec is None:
 			downloader = read_stream
+		elif downloader_spec.startswith('$'):
+			downloader_shell_command = downloader_spec.lstrip('$').strip()
+			Log.debug('Resolved downloader `{0}`: {1}'.format(downloader_spec, downloader_shell_command))
+			downloader = make_shell_downloader(subscription, downloader_shell_command)
 		else:
 			downloader = resolve_entry_point(downloader_spec)
 			if not downloader:
