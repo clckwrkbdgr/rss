@@ -164,13 +164,10 @@ DOCTYPE = b'''
 	<!ENTITY bull "&#8226;">
 ]>
 '''.replace(b'\n', b'')
-# Yields: guid, title, date, link, content
-def parse_feed(subscription):
+
+def fetch_feed(subscription):
 	try:
-		text = fetch_url(subscription)
-		if text is None:
-			return
-		yield from parse_text(text, subscription.url)
+		return fetch_url(subscription)
 	except KeyboardInterrupt:
 		log('{0}: Feed download interrupted'.format(subscription.url))
 	except Exception as e:
@@ -178,6 +175,7 @@ def parse_feed(subscription):
 			Log.exception('Unknown exception {1} when parsing feed: {0}'.format(subscription.url, e))
 		except Exception as _e:
 			Log.error('Unknown exception {1} when handling exception {2}: {0}'.format(subscription.url, _e, e))
+	return None
 
 def _retry_fetch_url(subscription, attempts_left, previous_log, error_message):
 	if attempts_left > 0:
@@ -406,6 +404,9 @@ def fetch_url(subscription, attempts_left=None, previous_log=None):
 	return None
 
 def parse_text(text, url, attempts_left=3):
+	""" Yields: guid, title, date, link, content """
+	if text is None:
+		return
 	try:
 		if len(text) > 2 and text[0] == 0x1f and text[1] == 0x8b:
 			Log.debug('We have gzipped content here.')
@@ -537,7 +538,9 @@ def pull_feed(config, subscription):
 		Log.exception('Exception {1} during marking feed as fetched: {0}'.format(url, e))
 	current_guids = set()
 	new_guids = set()
-	for guid, title, date, link, content in parse_feed(subscription):
+	data = fetch_feed(subscription)
+	fetch_time = datetime.datetime.now()
+	for guid, title, date, link, content in parse_text(data, subscription.url):
 		current_guids.add(guid)
 		with pull_feed.lock:
 			if db.guid_exists(url, guid):
@@ -642,10 +645,12 @@ def pull_feed(config, subscription):
 	try:
 		if config.perftimes_log:
 			with config.perftimes_log.open('a+') as f:
-				f.write("{0} - {1} | {2}\n".format(
+				f.write("{0} - {1} | {2} (F:{3} P:{4})\n".format(
 					start_time,
 					stop_time - start_time,
 					'urss::{0}: {1}'.format(subscription.key, subscription.url),
+					fetch_time - start_time,
+					stop_time - fetch_time,
 					))
 	except Exception as e:
 		Log.error('Failed to write perftimes_log ({0}): {1}'.format(
@@ -738,7 +743,8 @@ def main(groups, debug=False, test=None,
 			url = 'file://' + url
 		Log.debug('Fetching single feed: {0}'.format(url))
 		sub = subs.Subscription('test', url)
-		for item in parse_feed(sub):
+		data = fetch_feed(subscription)
+		for item in parse_text(data, url):
 			pprint.pprint(item)
 		return
 
