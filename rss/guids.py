@@ -69,6 +69,18 @@ class GuidDatabase:
 		result = [(int(f) if f else 0) for f, in self.c]
 		return result[0] if result else 0
 
+	def get_last_guids(self, feed, amount):
+		if amount <= 0:
+			return []
+		self.c.execute("""\
+				select guid from Guids where feed=?
+				order by datetime desc
+				limit ?
+				;""", (feed, amount))
+		self.conn.commit()
+		result = [(str(f) if f else None) for f, in self.c]
+		return result or []
+
 	def get_all_guids(self, feed, except_guids=None):
 		if except_guids:
 			self.c.execute("""\

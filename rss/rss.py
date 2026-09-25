@@ -139,7 +139,6 @@ def get_link(item):
 	return ''
 
 def get_content(item):
-	result = None
 	tags = ['fulltext', 'description', 'summary', 'content']
 	fulltags = []
 	for tag in tags:
@@ -434,7 +433,9 @@ def parse_text(text, url, attempts_left=3):
 		# so we reverse the list to match order of items with expected (natural) order of processing,
 		# e.g. so that mtimes of created files were placed in order the items were created.
 		Log.debug('Parsing XML...')
-		for item in reversed(fetch_items(root, url=url)):
+		items = fetch_items(root, url=url)
+		yield len(items), None, None, None, None # Metainfo row (content is None).
+		for item in reversed(items):
 			title = get_title(item)
 			title = title.strip() or title
 			Log.debug('Fetched item: {0}'.format(repr(title)))
@@ -540,18 +541,32 @@ def pull_feed(config, subscription):
 	new_guids = set()
 	data = fetch_feed(subscription)
 	fetch_time = datetime.datetime.now()
+	db_time = datetime.timedelta()
+	bayes_time = datetime.timedelta()
+	items_in_feed = None
+	guid_cache = []
 	for guid, title, date, link, content in parse_text(data, subscription.url):
+		if content is None: # Metainfo row.
+			items_in_feed = guid
+			db_time_start = datetime.datetime.now()
+			with pull_feed.lock:
+				guid_cache = db.get_last_guids(url, items_in_feed)
+			db_time += datetime.datetime.now() - db_time_start
+			continue
+		if guid.startswith('http://'):
+			guid = guid.replace('http://', 'https://')
 		current_guids.add(guid)
+		db_time_start = datetime.datetime.now()
 		with pull_feed.lock:
+			if guid in guid_cache:
+				Log.debug('GUID already exists, skipping.')
+				db_time += datetime.datetime.now() - db_time_start
+				continue
 			if db.guid_exists(url, guid):
 				Log.debug('GUID already exists, skipping.')
+				db_time += datetime.datetime.now() - db_time_start
 				continue
-			if guid.startswith('http://') and db.guid_exists(url, guid.replace('http://', 'https://')):
-				Log.debug('GUID already exists (http<->https), skipping.')
-				continue
-			if guid.startswith('https://') and db.guid_exists(url, guid.replace('https://', 'http://')):
-				Log.debug('GUID already exists (https<->http), skipping.')
-				continue
+		db_time += datetime.datetime.now() - db_time_start
 
 		savedir = config.RSS_DIR
 		try:
@@ -559,6 +574,7 @@ def pull_feed(config, subscription):
 		except Exception as e:
 			Log.error("Failed to get dir name from groups: {0}: {1}".format(groups, e))
 			dir_name = 'good'
+		bayes_time_start = datetime.datetime.now()
 		if bayes is not None:
 			Log.debug('Guessing Bayes tag...')
 			text_to_guess = content if content is not None else ""
@@ -579,6 +595,7 @@ def pull_feed(config, subscription):
 			Log.debug('  Bayes is off. Assuming as always good.')
 			savedir = os.path.join(savedir, dir_name)
 			Log.debug('  Saving to: {0}'.format(savedir))
+		bayes_time += datetime.datetime.now() - bayes_time_start
 
 		text = make_text(title, date, link, content)
 		if 'twitter.com' in url or 'twitter-rss.com' in url:
@@ -595,6 +612,7 @@ def pull_feed(config, subscription):
 		with pull_feed.lock:
 			db.add_guid(url, guid)
 			new_guids.add(guid)
+	feed_check_start = datetime.datetime.now()
 	with pull_feed.lock:
 		stored_guids = db.get_total_guids(url)
 		if new_guids and stored_guids > len(new_guids):
@@ -639,18 +657,24 @@ def pull_feed(config, subscription):
 		if offended_fetch_time:
 			min_interval, avg_interval, max_interval, _ = stats
 			Log.warning("{0}: Defined fetch interval ({1}) is too frequent for the actual feed interval ({2}={3}), min={4}, avg={5}, max={6}".format(url, subscription.time, subscription.warn_if_too_frequent_for, offended_fetch_time, min_interval, avg_interval, max_interval))
+	feed_check_time = datetime.datetime.now() - feed_check_start
 	db.close()
 
 	stop_time = datetime.datetime.now()
 	try:
 		if config.perftimes_log:
 			with config.perftimes_log.open('a+') as f:
-				f.write("{0} - {1} | {2} (F:{3} P:{4})\n".format(
+				f.write("{0} - {1} | {2} ({3})\n".format(
 					start_time,
 					stop_time - start_time,
 					'urss::{0}: {1}'.format(subscription.key, subscription.url),
-					fetch_time - start_time,
-					stop_time - fetch_time,
+					' '.join('{0}:{1}'.format(_k, _v) for (_k, _v) in {
+						'fetch':fetch_time - start_time,
+						'parse':stop_time - fetch_time,
+						'db':db_time,
+						'bayes':bayes_time,
+						'check':feed_check_time,
+						}.items()),
 					))
 	except Exception as e:
 		Log.error('Failed to write perftimes_log ({0}): {1}'.format(
